@@ -1,0 +1,22 @@
+{
+  "name": "lc-youtube-player",
+  "version": "1.0.0",
+  "description": "Web Component reproductor de YouTube personalizado.",
+  "main": "youtube-player.min.js",
+  "files": [
+    "youtube-player.min.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Exus-Agencia-Web/YoutubeCustomPlayer.git"
+  },
+  "author": "Exus Agencia Web",
+  "license": "MIT",
+  "keywords": ["youtube", "webcomponent", "player", "custom"],
+  "scripts": {
+    "build": "npx terser youtube-player.js -o youtube-player.min.js --compress --mangle"
+  },
+  "devDependencies": {
+    "terser": "^5.30.0"
+  }
+}
