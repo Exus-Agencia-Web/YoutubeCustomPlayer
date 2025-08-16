@@ -44,6 +44,9 @@ class LCYouTube extends HTMLElement {
         .vol{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
         .vol input{accent-color:#fff}
         .fs{cursor:pointer;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
+        .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,0,0,.85);color:#fff;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
+        .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
+        @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
         .root{ -webkit-touch-callout:none; -webkit-user-select:none; -moz-user-select:none; user-select:none }
       </style>
       <div class="root">
@@ -52,6 +55,7 @@ class LCYouTube extends HTMLElement {
             <div class="play" title="Reproducir"></div>
           </div>
           <div id="player"></div>
+          <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
           <div class="controls" id="controls">
             <div class="btn" id="playPause" title="Reproducir/Pausar">▶︎</div>
             <div class="progress" id="progress" title="Buscar">
@@ -80,6 +84,7 @@ class LCYouTube extends HTMLElement {
 		if (name === 'video' && oldV !== newV) {
 			this._video = newV || '';
 			if (this._player) { this._player.loadVideoById(this._video); }
+			this._isLive = false;
 		}
 	}
 
@@ -88,6 +93,7 @@ class LCYouTube extends HTMLElement {
 		this.$wrap = r.getElementById('wrap');
 		this.$overlay = r.getElementById('overlay');
 		this.$player = r.getElementById('player');
+		this.$live = r.getElementById('live');
 		this.$progress = r.getElementById('progress');
 		this.$bar = r.getElementById('bar');
 		this.$seek = r.getElementById('seek');
@@ -96,6 +102,23 @@ class LCYouTube extends HTMLElement {
 		this.$fs = r.getElementById('fs');
 		this.$playBtn = r.getElementById('playPause');
 	}
+
+  _detectLive(){
+    try {
+      const d = this._player?.getDuration?.() || 0;
+      // Si ya fue detectado como live, mantenlo (evita falsos negativos cuando hay DVR)
+      return this._isLive || d === 0;
+    } catch(_) { return !!this._isLive; }
+  }
+
+  _setLiveUI(isLive){
+    const next = !!isLive || !!this._isLive; // sticky mientras no cambie el video
+    this._isLive = next;
+    if(this.$live) this.$live.style.display = this._isLive ? 'inline-flex' : 'none';
+    // Mantener barra visible también en live (DVR)
+    if(this.$progress) this.$progress.style.display = '';
+    if(this.$time) this.$time.textContent = this._isLive ? 'EN VIVO' : this.$time.textContent;
+  }
 
 	_bindUI() {
 		// Auto-hide de controles
@@ -126,11 +149,12 @@ class LCYouTube extends HTMLElement {
 			const rect = this.$progress.getBoundingClientRect();
 			const x = e.clientX - rect.left;
 			const pct = Math.min(1, Math.max(0, x / rect.width));
-			if (this._duration > 0) {
-				const target = this._duration * pct;
-				this._player.seekTo(target, true);
-				this._immediateUI(target);
-			}
+      const effDur = (this._duration && this._duration > 0) ? this._duration : (this._player?.getCurrentTime?.() || 0);
+      if (effDur > 0) {
+        const target = effDur * pct;
+        this._player.seekTo(target, true);
+        this._immediateUI(target);
+      }
 		});
 
 		// Doble click/tap: ±10s
@@ -176,9 +200,12 @@ class LCYouTube extends HTMLElement {
 		this._player.setVolume(parseInt(this.$vol.value, 10));
 		this._duration = this._player.getDuration() || 0;
 		this._updateUI();
+    this._setLiveUI(this._detectLive());
 	}
 
 	_onStateChange(e) {
+    // Actualiza modo live por si cambia al cargar
+    this._setLiveUI(this._detectLive());
 		if (e.data === YT.PlayerState.PLAYING) {
 			this.$overlay.classList.add('playing');
 			this._startTimer();
@@ -198,16 +225,25 @@ class LCYouTube extends HTMLElement {
 	}
 
 	_updateUI() {
-		if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
-		const t = this._player.getCurrentTime() || 0;
-		this._duration = this._player.getDuration() || this._duration || 0;
+    if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
+    this._setLiveUI(this._detectLive());
+    const t = this._player.getCurrentTime() || 0;
+    this._duration = this._player.getDuration() || this._duration || 0;
+    // En live, mantener barra y permitir seek. Si getDuration() es 0, usamos t como "duración" efectiva.
+    if (this._isLive && (!this._duration || this._duration === 0)) {
+      this._duration = Math.max(this._duration, t);
+    }
 		const pct = this._duration ? (t / this._duration) : 0;
 		this.$bar.style.width = (pct * 100) + '%';
 		this.$seek.style.left = (pct * 100) + '%';
-		this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+		this.$time.textContent = this._isLive ? `${this._fmt(t)} / EN VIVO` : `${this._fmt(t)} / ${this._fmt(this._duration)}`;
 	}
 
 	_immediateUI(target) {
+    // En live, también actualizamos la barra; si no hay duración, usamos target o tiempo actual como referencia
+    if (this._isLive && (!this._duration || this._duration === 0)) {
+      this._duration = Math.max(this._duration, target || 0);
+    }
 		const pct = this._duration ? (target / this._duration) : 0;
 		this.$bar.style.width = (pct * 100) + '%';
 		this.$seek.style.left = (pct * 100) + '%';
