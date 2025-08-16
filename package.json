@@ -1,6 +1,6 @@
 {
   "name": "lc-youtube-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Web Component reproductor de YouTube personalizado.",
   "main": "youtube-player.min.js",
   "files": [
