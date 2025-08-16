@@ -1,28 +1,28 @@
 // Carga única de la IFrame API de YouTube (compartida por todas las instancias)
 const YT_API_LOADER = (() => {
-  if (window.__ytApiReadyPromise) return window.__ytApiReadyPromise;
-  window.__ytApiReadyPromise = new Promise((resolve) => {
-    if (window.YT && window.YT.Player) return resolve();
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(tag);
-    window.onYouTubeIframeAPIReady = () => resolve();
-  });
-  return window.__ytApiReadyPromise;
+	if (window.__ytApiReadyPromise) return window.__ytApiReadyPromise;
+	window.__ytApiReadyPromise = new Promise((resolve) => {
+		if (window.YT && window.YT.Player) return resolve();
+		const tag = document.createElement('script');
+		tag.src = 'https://www.youtube.com/iframe_api';
+		document.head.appendChild(tag);
+		window.onYouTubeIframeAPIReady = () => resolve();
+	});
+	return window.__ytApiReadyPromise;
 })();
 
 class LCYouTube extends HTMLElement {
-  static get observedAttributes(){ return ['video']; }
+	static get observedAttributes() { return ['video']; }
 
-  constructor(){
-    super();
-    this._video = '';
-    this._player = null;
-    this._duration = 0;
-    this._timer = null;
-    this._lastTap = 0;
-    this.attachShadow({ mode: 'open' });
-    this.shadowRoot.innerHTML = `
+	constructor() {
+		super();
+		this._video = '';
+		this._player = null;
+		this._duration = 0;
+		this._timer = null;
+		this._lastTap = 0;
+		this.attachShadow({ mode: 'open' });
+		this.shadowRoot.innerHTML = `
       <style>
         :host{display:block}
         .yt-wrap{position:relative;max-width:1920px;margin:auto;background:#000;aspect-ratio:16/9;overflow:hidden;border-radius:5px}
@@ -65,164 +65,164 @@ class LCYouTube extends HTMLElement {
         </div>
       </div>
     `;
-  }
+	}
 
-  connectedCallback(){
-    this._video = this.getAttribute('video') || '';
-    this._cacheEls();
-    this._bindUI();
-    this._mountPlayer();
-  }
+	connectedCallback() {
+		this._video = this.getAttribute('video') || '';
+		this._cacheEls();
+		this._bindUI();
+		this._mountPlayer();
+	}
 
-  disconnectedCallback(){ this._teardown(); }
+	disconnectedCallback() { this._teardown(); }
 
-  attributeChangedCallback(name, oldV, newV){
-    if(name==='video' && oldV!==newV){
-      this._video = newV || '';
-      if(this._player){ this._player.loadVideoById(this._video); }
-    }
-  }
+	attributeChangedCallback(name, oldV, newV) {
+		if (name === 'video' && oldV !== newV) {
+			this._video = newV || '';
+			if (this._player) { this._player.loadVideoById(this._video); }
+		}
+	}
 
-  _cacheEls(){
-    const r = this.shadowRoot;
-    this.$wrap = r.getElementById('wrap');
-    this.$overlay = r.getElementById('overlay');
-    this.$player = r.getElementById('player');
-    this.$progress = r.getElementById('progress');
-    this.$bar = r.getElementById('bar');
-    this.$seek = r.getElementById('seek');
-    this.$time = r.getElementById('time');
-    this.$vol = r.getElementById('volume');
-    this.$fs = r.getElementById('fs');
-    this.$playBtn = r.getElementById('playPause');
-  }
+	_cacheEls() {
+		const r = this.shadowRoot;
+		this.$wrap = r.getElementById('wrap');
+		this.$overlay = r.getElementById('overlay');
+		this.$player = r.getElementById('player');
+		this.$progress = r.getElementById('progress');
+		this.$bar = r.getElementById('bar');
+		this.$seek = r.getElementById('seek');
+		this.$time = r.getElementById('time');
+		this.$vol = r.getElementById('volume');
+		this.$fs = r.getElementById('fs');
+		this.$playBtn = r.getElementById('playPause');
+	}
 
-  _bindUI(){
-    // Auto-hide de controles
-    this._controlsTimer = null;
-    const blinkControls = () => {
-      this.$wrap.classList.add('show-controls');
-      clearTimeout(this._controlsTimer);
-      this._controlsTimer = setTimeout(()=>this.$wrap.classList.remove('show-controls'), 2000);
-    };
-    this._blinkControls = blinkControls;
-    ['mousemove','touchstart'].forEach(evt=>this.$wrap.addEventListener(evt, blinkControls));
+	_bindUI() {
+		// Auto-hide de controles
+		this._controlsTimer = null;
+		const blinkControls = () => {
+			this.$wrap.classList.add('show-controls');
+			clearTimeout(this._controlsTimer);
+			this._controlsTimer = setTimeout(() => this.$wrap.classList.remove('show-controls'), 2000);
+		};
+		this._blinkControls = blinkControls;
+		['mousemove', 'touchstart'].forEach(evt => this.$wrap.addEventListener(evt, blinkControls));
 
-    // Overlay: play/pause
-    this.$overlay.addEventListener('click', () => {
-      const st = this._player?.getPlayerState?.();
-      if(st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
-    });
-    this.$overlay.addEventListener('keydown', (e)=>{ if(e.code==='Space' || e.key===' '){ e.preventDefault(); this.$overlay.click(); }});
+		// Overlay: play/pause
+		this.$overlay.addEventListener('click', () => {
+			const st = this._player?.getPlayerState?.();
+			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
+		});
+		this.$overlay.addEventListener('keydown', (e) => { if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); this.$overlay.click(); } });
 
-    // Botón pequeño play/pause
-    this.$playBtn.addEventListener('click', () => {
-      const st = this._player?.getPlayerState?.();
-      if(st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
-    });
+		// Botón pequeño play/pause
+		this.$playBtn.addEventListener('click', () => {
+			const st = this._player?.getPlayerState?.();
+			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
+		});
 
-    // Seek con click
-    this.$progress.addEventListener('click', (e) => {
-      const rect = this.$progress.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = Math.min(1, Math.max(0, x/rect.width));
-      if(this._duration > 0){
-        const target = this._duration * pct;
-        this._player.seekTo(target, true);
-        this._immediateUI(target);
-      }
-    });
+		// Seek con click
+		this.$progress.addEventListener('click', (e) => {
+			const rect = this.$progress.getBoundingClientRect();
+			const x = e.clientX - rect.left;
+			const pct = Math.min(1, Math.max(0, x / rect.width));
+			if (this._duration > 0) {
+				const target = this._duration * pct;
+				this._player.seekTo(target, true);
+				this._immediateUI(target);
+			}
+		});
 
-    // Doble click/tap: ±10s
-    this.$overlay.addEventListener('dblclick', (e) => {
-      const rect = this.$overlay.getBoundingClientRect();
-      const x = e.clientX - rect.left; const mid = rect.width/2;
-      const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
-      const target = Math.max(0, cur + delta);
-      this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
-    });
-    this.$overlay.addEventListener('touchend', (e) => {
-      const now = Date.now(); const dt = now - this._lastTap; this._lastTap = now;
-      if(dt < 300){
-        const touch = e.changedTouches[0]; const rect = this.$overlay.getBoundingClientRect();
-        const x = touch.clientX - rect.left; const mid = rect.width/2;
-        const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
-        const target = Math.max(0, cur + delta);
-        this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
-      }
-    });
+		// Doble click/tap: ±10s
+		this.$overlay.addEventListener('dblclick', (e) => {
+			const rect = this.$overlay.getBoundingClientRect();
+			const x = e.clientX - rect.left; const mid = rect.width / 2;
+			const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
+			const target = Math.max(0, cur + delta);
+			this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
+		});
+		this.$overlay.addEventListener('touchend', (e) => {
+			const now = Date.now(); const dt = now - this._lastTap; this._lastTap = now;
+			if (dt < 300) {
+				const touch = e.changedTouches[0]; const rect = this.$overlay.getBoundingClientRect();
+				const x = touch.clientX - rect.left; const mid = rect.width / 2;
+				const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
+				const target = Math.max(0, cur + delta);
+				this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
+			}
+		});
 
-    // Volumen y fullscreen
-    this.$vol.addEventListener('input', ()=>{ this._player.setVolume(parseInt(this.$vol.value,10)); });
-    this.$fs.addEventListener('click', ()=>{
-      const el = this.$wrap; const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen; if(req) req.call(el);
-    });
+		// Volumen y fullscreen
+		this.$vol.addEventListener('input', () => { this._player.setVolume(parseInt(this.$vol.value, 10)); });
+		this.$fs.addEventListener('click', () => {
+			const el = this.$wrap; const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen; if (req) req.call(el);
+		});
 
-    // Context menu
-    this.$wrap.addEventListener('contextmenu', e => e.preventDefault());
-  }
+		// Context menu
+		this.$wrap.addEventListener('contextmenu', e => e.preventDefault());
+	}
 
-  async _mountPlayer(){
-    if(!this._video) return;
-    await YT_API_LOADER;
-    this._player = new YT.Player(this.$player, {
-      videoId: this._video,
-      playerVars: { controls:0, modestbranding:1, rel:0, disablekb:1, fs:0, playsinline:1, iv_load_policy:3 },
-      events: { onReady: ()=>this._onReady(), onStateChange: (e)=>this._onStateChange(e) }
-    });
-  }
+	async _mountPlayer() {
+		if (!this._video) return;
+		await YT_API_LOADER;
+		this._player = new YT.Player(this.$player, {
+			videoId: this._video,
+			playerVars: { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3 },
+			events: { onReady: () => this._onReady(), onStateChange: (e) => this._onStateChange(e) }
+		});
+	}
 
-  _onReady(){
-    this._player.setVolume(parseInt(this.$vol.value, 10));
-    this._duration = this._player.getDuration() || 0;
-    this._updateUI();
-  }
+	_onReady() {
+		this._player.setVolume(parseInt(this.$vol.value, 10));
+		this._duration = this._player.getDuration() || 0;
+		this._updateUI();
+	}
 
-  _onStateChange(e){
-    if(e.data === YT.PlayerState.PLAYING){
-      this.$overlay.classList.add('playing');
-      this._startTimer();
-      this._blinkControls();
-      this.$playBtn.textContent = '❚❚';
-    } else if(e.data === YT.PlayerState.PAUSED){
-      this.$overlay.classList.remove('playing');
-      this._stopTimer();
-      this._blinkControls();
-      this.$playBtn.textContent = '▶︎';
-    } else if(e.data === YT.PlayerState.ENDED){
-      this.$overlay.classList.remove('playing');
-      this._stopTimer();
-      this._blinkControls();
-      this.$playBtn.textContent = '▶︎';
-    }
-  }
+	_onStateChange(e) {
+		if (e.data === YT.PlayerState.PLAYING) {
+			this.$overlay.classList.add('playing');
+			this._startTimer();
+			this._blinkControls();
+			this.$playBtn.textContent = '❚❚';
+		} else if (e.data === YT.PlayerState.PAUSED) {
+			this.$overlay.classList.remove('playing');
+			this._stopTimer();
+			this._blinkControls();
+			this.$playBtn.textContent = '▶︎';
+		} else if (e.data === YT.PlayerState.ENDED) {
+			this.$overlay.classList.remove('playing');
+			this._stopTimer();
+			this._blinkControls();
+			this.$playBtn.textContent = '▶︎';
+		}
+	}
 
-  _updateUI(){
-    if(!this._player || typeof this._player.getCurrentTime !== 'function') return;
-    const t = this._player.getCurrentTime() || 0;
-    this._duration = this._player.getDuration() || this._duration || 0;
-    const pct = this._duration ? (t / this._duration) : 0;
-    this.$bar.style.width = (pct * 100) + '%';
-    this.$seek.style.left = (pct * 100) + '%';
-    this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
-  }
+	_updateUI() {
+		if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
+		const t = this._player.getCurrentTime() || 0;
+		this._duration = this._player.getDuration() || this._duration || 0;
+		const pct = this._duration ? (t / this._duration) : 0;
+		this.$bar.style.width = (pct * 100) + '%';
+		this.$seek.style.left = (pct * 100) + '%';
+		this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+	}
 
-  _immediateUI(target){
-    const pct = this._duration ? (target / this._duration) : 0;
-    this.$bar.style.width = (pct * 100) + '%';
-    this.$seek.style.left = (pct * 100) + '%';
-    this.$time.textContent = `${this._fmt(target)} / ${this._fmt(this._duration)}`;
-    setTimeout(()=>this._updateUI(), 120);
-  }
+	_immediateUI(target) {
+		const pct = this._duration ? (target / this._duration) : 0;
+		this.$bar.style.width = (pct * 100) + '%';
+		this.$seek.style.left = (pct * 100) + '%';
+		this.$time.textContent = `${this._fmt(target)} / ${this._fmt(this._duration)}`;
+		setTimeout(() => this._updateUI(), 120);
+	}
 
-  _startTimer(){ if(!this._timer) this._timer = setInterval(()=>this._updateUI(), 250); }
-  _stopTimer(){ clearInterval(this._timer); this._timer = null; }
+	_startTimer() { if (!this._timer) this._timer = setInterval(() => this._updateUI(), 250); }
+	_stopTimer() { clearInterval(this._timer); this._timer = null; }
 
-  _fmt(s){ s = Math.max(0, Math.floor(s||0)); const m = String(Math.floor(s/60)).padStart(2,'0'); const sec = String(s%60).padStart(2,'0'); return `${m}:${sec}`; }
+	_fmt(s) { s = Math.max(0, Math.floor(s || 0)); const m = String(Math.floor(s / 60)).padStart(2, '0'); const sec = String(s % 60).padStart(2, '0'); return `${m}:${sec}`; }
 
-  _teardown(){
-    try{ this._stopTimer(); this._player && this._player.destroy && this._player.destroy(); }catch(_){ }
-  }
+	_teardown() {
+		try { this._stopTimer(); this._player && this._player.destroy && this._player.destroy(); } catch (_) { }
+	}
 }
 
 customElements.define('lc-youtube', LCYouTube);
