@@ -21,7 +21,9 @@ class LCYouTube extends HTMLElement {
 		this.shadowRoot.innerHTML = `
       <style>
         :host{display:block}
-        .yt-wrap{position:relative;max-width:1920px;margin:auto;background:#000;aspect-ratio:16/9;overflow:hidden;border-radius:5px}
+        .yt-wrap{position:relative;max-width:1920px;margin:auto;background:#000;aspect-ratio:16/9;border-radius:5px}
+        .overlay,.controls,#player,.live-badge{border-radius:inherit}
+        iframe{border-radius:inherit}
         iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
         .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,.65));cursor:pointer;z-index:3}
         .overlay.playing{ background: transparent; }
