@@ -101,7 +101,13 @@ class LCYouTube extends HTMLElement {
 	connectedCallback() {
 		this._video = this.getAttribute('video') || '';
 		this._playlist = this._parseListId(this.getAttribute('playlist') || '');
-		this._index = parseInt(this.getAttribute('index') || '0', 10) || 0;
+			let idxAttr = parseInt(this.getAttribute('index') || '0', 10);
+			if (idxAttr === -1 && this._playlist && this._player && typeof this._player.getPlaylist === 'function') {
+				const list = this._player.getPlaylist();
+				this._index = Array.isArray(list) ? list.length - 1 : 0;
+			} else {
+				this._index = idxAttr || 0;
+			}
 		this._autoplay = this._parseBool(this.getAttribute('autoplay')) || this.hasAttribute('autoplay');
 		this._cacheEls();
 		this._bindUI();
@@ -124,13 +130,19 @@ class LCYouTube extends HTMLElement {
 			}
 			this._updatePlaylistNav();
 		}
-		if (name === 'index' && oldV !== newV) {
-			this._index = parseInt(newV || '0', 10) || 0;
-			if (this._player && this._playlist) {
-				try { this._player.playVideoAt(this._index); } catch(_) {}
+			if (name === 'index' && oldV !== newV) {
+				let idxAttr = parseInt(newV || '0', 10);
+				if (idxAttr === -1 && this._playlist && this._player && typeof this._player.getPlaylist === 'function') {
+					const list = this._player.getPlaylist();
+					this._index = Array.isArray(list) ? list.length - 1 : 0;
+				} else {
+					this._index = idxAttr || 0;
+				}
+				if (this._player && this._playlist) {
+					try { this._player.playVideoAt(this._index); } catch(_) {}
+				}
+				this._updatePlaylistNav();
 			}
-			this._updatePlaylistNav();
-		}
 		if (name === 'autoplay' && oldV !== newV) {
 			this._autoplay = this._parseBool(newV) || this.hasAttribute('autoplay');
 			if (this._player && this._autoplay) {
