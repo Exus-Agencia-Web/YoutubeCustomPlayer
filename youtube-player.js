@@ -122,19 +122,21 @@ class LCYouTube extends HTMLElement {
 				const payload = { list: this._playlist, listType: 'playlist', index: this._index };
 				try { this._autoplay ? this._player.loadPlaylist(payload) : this._player.cuePlaylist(payload); } catch(_) {}
 			}
+			this._updatePlaylistNav();
 		}
 		if (name === 'index' && oldV !== newV) {
 			this._index = parseInt(newV || '0', 10) || 0;
 			if (this._player && this._playlist) {
 				try { this._player.playVideoAt(this._index); } catch(_) {}
 			}
+			this._updatePlaylistNav();
 		}
 		if (name === 'autoplay' && oldV !== newV) {
 			this._autoplay = this._parseBool(newV) || this.hasAttribute('autoplay');
-			// Si ya existe el player y se activa autoplay, intenta reproducir en mute
 			if (this._player && this._autoplay) {
 				try { this._player.mute(); this._player.playVideo(); } catch(_) {}
 			}
+			this._updatePlaylistNav();
 		}
 	}
 
@@ -277,8 +279,16 @@ class LCYouTube extends HTMLElement {
   this.$next.style.display = s;
 }
 
-		if (this.$prev) this.$prev.addEventListener('click', () => { try { this._player.previousVideo(); } catch(_) {} });
-		if (this.$next) this.$next.addEventListener('click', () => { try { this._player.nextVideo(); } catch(_) {} });
+		if (this.$prev) this.$prev.addEventListener('click', () => {
+  if (!this.$prev.disabled) {
+    try { this._player.previousVideo(); } catch(_) {}
+  }
+});
+		if (this.$next) this.$next.addEventListener('click', () => {
+  if (!this.$next.disabled) {
+    try { this._player.nextVideo(); } catch(_) {}
+  }
+});
 	}
 
 	async _mountPlayer() {
@@ -317,6 +327,7 @@ class LCYouTube extends HTMLElement {
 		}
 		this._updateUI();
 		this._setLiveUI(this._detectLive());
+		this._updatePlaylistNav();
 	}
 
 	_onStateChange(e) {
@@ -341,6 +352,7 @@ class LCYouTube extends HTMLElement {
 			this._blinkControls();
 			this.$playBtn.textContent = '▶︎';
 		}
+		this._updatePlaylistNav();
 	}
 
 	_updateUI() {
@@ -378,6 +390,27 @@ class LCYouTube extends HTMLElement {
 	_teardown() {
 		try { this._stopTimer(); this._player && this._player.destroy && this._player.destroy(); } catch (_) { }
 	}
+
+	_updatePlaylistNav() {
+  if (!this._player || !this._playlist) {
+    if (this.$prev) this.$prev.disabled = true;
+    if (this.$next) this.$next.disabled = true;
+    return;
+  }
+  let idx = 0;
+  let len = 0;
+  try {
+    if (typeof this._player.getPlaylistIndex === 'function') {
+      idx = this._player.getPlaylistIndex();
+    }
+    if (typeof this._player.getPlaylist === 'function') {
+      const list = this._player.getPlaylist();
+      if (Array.isArray(list)) len = list.length;
+    }
+  } catch(_) {}
+  if (this.$prev) this.$prev.disabled = (idx <= 0);
+  if (this.$next) this.$next.disabled = (len === 0 || idx >= len - 1);
+}
 }
 
 customElements.define('lc-youtube', LCYouTube);
