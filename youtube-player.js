@@ -65,7 +65,9 @@ class LCYouTube extends HTMLElement {
           <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
           <div class="sound-hint hide" id="soundHint">🔊 Toca para activar sonido</div>
           <div class="controls" id="controls">
+            <div class="btn" id="prev" title="Anterior">⏮</div>
             <div class="btn" id="playPause" title="Reproducir/Pausar">▶︎</div>
+            <div class="btn" id="next" title="Siguiente">⏭</div>
             <div class="progress" id="progress" title="Buscar">
               <div class="bar" id="bar"></div>
               <div class="seek" id="seek"></div>
@@ -152,6 +154,8 @@ class LCYouTube extends HTMLElement {
 		this.$playBtn = r.getElementById('playPause');
 		this.$error = r.getElementById('errorMask');
 		this.$controls = r.getElementById('controls');
+		this.$prev = r.getElementById('prev');
+		this.$next = r.getElementById('next');
 	}
 	_showError(){
 	  try { this._stopTimer(); } catch(_){}
@@ -162,19 +166,20 @@ class LCYouTube extends HTMLElement {
 
   _detectLive(){
     try {
+      // Nunca marcar como EN VIVO cuando estamos en playlist
+      if (this._playlist) return false;
       const d = this._player?.getDuration?.() || 0;
-      // Si ya fue detectado como live, mantenlo (evita falsos negativos cuando hay DVR)
-      return this._isLive || d === 0;
-    } catch(_) { return !!this._isLive; }
+      const st = this._player?.getPlayerState?.();
+      // Considerar live solo cuando hay reproducción/carga real y duración 0
+      return d === 0 && (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED);
+    } catch(_) { return false; }
   }
 
   _setLiveUI(isLive){
-    const next = !!isLive || !!this._isLive; // sticky mientras no cambie el video
-    this._isLive = next;
+    this._isLive = !!isLive;
     if(this.$live) this.$live.style.display = this._isLive ? 'inline-flex' : 'none';
     // Mantener barra visible también en live (DVR)
     if(this.$progress) this.$progress.style.display = '';
-    if(this.$time) this.$time.textContent = this._isLive ? 'EN VIVO' : this.$time.textContent;
   }
 
 	_bindUI() {
@@ -264,6 +269,16 @@ class LCYouTube extends HTMLElement {
 
 		// Context menu
 		this.$wrap.addEventListener('contextmenu', e => e.preventDefault());
+
+		// Controles de playlist: anterior/siguiente
+		if (this.$prev && this.$next) {
+  const s = this._playlist ? 'inline-flex' : 'none';
+  this.$prev.style.display = s;
+  this.$next.style.display = s;
+}
+
+		if (this.$prev) this.$prev.addEventListener('click', () => { try { this._player.previousVideo(); } catch(_) {} });
+		if (this.$next) this.$next.addEventListener('click', () => { try { this._player.nextVideo(); } catch(_) {} });
 	}
 
 	async _mountPlayer() {
