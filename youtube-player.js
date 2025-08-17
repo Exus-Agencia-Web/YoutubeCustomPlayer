@@ -1,15 +1,11 @@
 // Carga única de la IFrame API de YouTube (compartida por todas las instancias)
-const YT_API_LOADER = (() => {
-	if (window.__ytApiReadyPromise) return window.__ytApiReadyPromise;
-	window.__ytApiReadyPromise = new Promise((resolve) => {
-		if (window.YT && window.YT.Player) return resolve();
-		const tag = document.createElement('script');
-		tag.src = 'https://www.youtube.com/iframe_api';
-		document.head.appendChild(tag);
-		window.onYouTubeIframeAPIReady = () => resolve();
-	});
-	return window.__ytApiReadyPromise;
-})();
+window.__ytApiReadyPromise = new Promise((resolve) => {
+	if (window.YT && window.YT.Player) return resolve();
+	const tag = document.createElement('script');
+	tag.src = 'https://www.youtube.com/iframe_api';
+	document.head.appendChild(tag);
+	window.onYouTubeIframeAPIReady = () => resolve();
+});
 
 class LCYouTube extends HTMLElement {
 	static get observedAttributes() { return ['video']; }
@@ -188,7 +184,7 @@ class LCYouTube extends HTMLElement {
 
 	async _mountPlayer() {
 		if (!this._video) return;
-		await YT_API_LOADER;
+		await window.__ytApiReadyPromise;
 		this._player = new YT.Player(this.$player, {
 			videoId: this._video,
 			playerVars: { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3 },
