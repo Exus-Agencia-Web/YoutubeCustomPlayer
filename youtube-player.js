@@ -50,6 +50,8 @@ class LCYouTube extends HTMLElement {
         .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
         .sound-hint{position:absolute;top:15px;right:15px;background:rgba(0,0,0,.65);color:#fff;padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
         .sound-hint.hide{display:none}
+        .error-mask{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000;color:#fff;font:600 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:7;text-align:center;padding:20px;border-radius:inherit}
+        .error-mask.show{display:flex}
         @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
         .root{ -webkit-touch-callout:none; -webkit-user-select:none; -moz-user-select:none; user-select:none }
       </style>
@@ -59,6 +61,7 @@ class LCYouTube extends HTMLElement {
             <div class="play" title="Reproducir"></div>
           </div>
           <div id="player"></div>
+          <div class="error-mask" id="errorMask">Video no disponible</div>
           <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
           <div class="sound-hint hide" id="soundHint">🔊 Toca para activar sonido</div>
           <div class="controls" id="controls">
@@ -112,26 +115,25 @@ class LCYouTube extends HTMLElement {
 			this._isLive = false;
 		}
 		if (name === 'playlist' && oldV !== newV) {
-     this._playlist = this._parseListId(newV || '');
-     if (this._player) {
-       if (this._playlist) {
-         this._player.loadPlaylist({list: this._playlist, listType: 'playlist', index: this._index});
-       }
-     }
-   }
-   if (name === 'index' && oldV !== newV) {
-     this._index = parseInt(newV || '0', 10) || 0;
-     if (this._player && this._playlist) {
-       try { this._player.playVideoAt(this._index); } catch(_) {}
-     }
-   }
-   if (name === 'autoplay' && oldV !== newV) {
-     this._autoplay = this._parseBool(newV) || this.hasAttribute('autoplay');
-     // Si ya existe el player y se activa autoplay, intenta reproducir en mute
-     if (this._player && this._autoplay) {
-       try { this._player.mute(); this._player.playVideo(); } catch(_) {}
-     }
-   }
+			this._playlist = this._parseListId(newV || '');
+			if (this._player && this._playlist) {
+				const payload = { list: this._playlist, listType: 'playlist', index: this._index };
+				try { this._autoplay ? this._player.loadPlaylist(payload) : this._player.cuePlaylist(payload); } catch(_) {}
+			}
+		}
+		if (name === 'index' && oldV !== newV) {
+			this._index = parseInt(newV || '0', 10) || 0;
+			if (this._player && this._playlist) {
+				try { this._player.playVideoAt(this._index); } catch(_) {}
+			}
+		}
+		if (name === 'autoplay' && oldV !== newV) {
+			this._autoplay = this._parseBool(newV) || this.hasAttribute('autoplay');
+			// Si ya existe el player y se activa autoplay, intenta reproducir en mute
+			if (this._player && this._autoplay) {
+				try { this._player.mute(); this._player.playVideo(); } catch(_) {}
+			}
+		}
 	}
 
 	_cacheEls() {
@@ -148,6 +150,14 @@ class LCYouTube extends HTMLElement {
 		this.$vol = r.getElementById('volume');
 		this.$fs = r.getElementById('fs');
 		this.$playBtn = r.getElementById('playPause');
+		this.$error = r.getElementById('errorMask');
+		this.$controls = r.getElementById('controls');
+	}
+	_showError(){
+	  try { this._stopTimer(); } catch(_){}
+	  if (this.$overlay) this.$overlay.style.display = 'none';
+	  if (this.$controls) this.$controls.style.display = 'none';
+	  if (this.$error) this.$error.classList.add('show');
 	}
 
   _detectLive(){
@@ -260,39 +270,46 @@ class LCYouTube extends HTMLElement {
 		if (!this._video && !this._playlist) return;
 		await window.__ytApiReadyPromise;
 		const baseVars = { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3, autoplay: this._autoplay ? 1 : 0 };
-		let config = { playerVars: baseVars };
-		if (this._playlist) {
-			config.playerVars = { ...baseVars, listType: 'playlist', list: this._playlist, index: this._index };
-			config.videoId = undefined;
-		} else {
-			config.videoId = this._video;
+		const opts = { playerVars: baseVars };
+		if (!this._playlist) {
+		  opts.videoId = this._video; // solo cuando NO es playlist
 		}
 		this._player = new YT.Player(this.$player, {
-			...config,
-			events: { onReady: () => this._onReady(), onStateChange: (e) => this._onStateChange(e) }
+			...opts,
+			events: { onReady: () => this._onReady(), onStateChange: (e) => this._onStateChange(e), onError: () => this._showError() }
 		});
 	}
 
 	_onReady() {
 		this._player.setVolume(parseInt(this.$vol.value, 10));
-    if (this._autoplay) {
-      try { this._player.mute(); } catch(_) {}
-    }
+		if (this._autoplay) {
+			try { this._player.mute(); } catch(_) {}
+		}
 		this._duration = this._player.getDuration() || 0;
-    // Si es playlist, asegura que esté cargada desde el índice indicado
-    if (this._playlist) {
-      try { this._player.playVideoAt(this._index); } catch(_) {}
-    }
-    if (this._autoplay) {
-      try { this._player.playVideo(); } catch(_) {}
-    }
+		// Si es playlist, carga o deja en espera según autoplay
+		if (this._playlist) {
+			try {
+				const payload = { listType: 'playlist', list: this._playlist, index: this._index };
+				if (this._autoplay) {
+					this._player.loadPlaylist(payload); // inicia solo
+				} else {
+					this._player.cuePlaylist(payload);  // queda listo sin reproducir
+				}
+			} catch(_) {}
+		} else if (this._autoplay) {
+			// Solo videos sueltos necesitan el play explícito
+			try { this._player.playVideo(); } catch(_) {}
+		}
 		this._updateUI();
-    this._setLiveUI(this._detectLive());
+		this._setLiveUI(this._detectLive());
 	}
 
 	_onStateChange(e) {
-    // Actualiza modo live por si cambia al cargar
-    this._setLiveUI(this._detectLive());
+		// Actualiza modo live por si cambia al cargar
+		this._setLiveUI(this._detectLive());
+		if (e.data === YT.PlayerState.CUED && this._autoplay) {
+			try { this._player.playVideo(); } catch(_) {}
+		}
 		if (e.data === YT.PlayerState.PLAYING) {
 			this.$overlay.classList.add('playing');
 			this._startTimer();
