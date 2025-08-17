@@ -31,6 +31,26 @@ O:
 </html>
 ```
 
+## Ejemplos avanzados
+
+### Video individual con autoplay
+
+```html
+<lc-youtube video="C4O7djfJZ9Q" autoplay="1"></lc-youtube>
+```
+
+### Playlist por ID con index y autoplay
+
+```html
+<lc-youtube playlist="PL9tY0BWXOZFtj6o7r8D0a9yW8Bv6jGx9Q" index="2" autoplay="1"></lc-youtube>
+```
+
+### Playlist con URL `videoseries`
+
+```html
+<lc-youtube playlist="videoseries?list=PL9tY0BWXOZFtj6o7r8D0a9yW8Bv6jGx9Q"></lc-youtube>
+```
+
 ## Uso en proyectos locales
 
 Instala el paquete:
@@ -57,10 +77,10 @@ Para publicar automáticamente:
 
 ## Personalización
 
-Puedes usar el componente `<lc-youtube>` en tu HTML y pasarle el atributo `video` con el ID del video de YouTube:
+Puedes usar el componente `<lc-youtube>` en tu HTML y pasarle los atributos `video`, `playlist`, `index` y `autoplay` para controlar la reproducción de videos o listas de reproducción de YouTube:
 
 ```html
-<lc-youtube video="C4O7djfJZ9Q"></lc-youtube>
+<lc-youtube video="C4O7djfJZ9Q" autoplay="1"></lc-youtube>
 ```
 
 ## Autor

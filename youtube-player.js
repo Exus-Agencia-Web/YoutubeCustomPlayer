@@ -8,11 +8,15 @@ window.__ytApiReadyPromise = new Promise((resolve) => {
 });
 
 class LCYouTube extends HTMLElement {
-	static get observedAttributes() { return ['video']; }
+	static get observedAttributes() { return ['video','playlist','index','autoplay']; }
 
 	constructor() {
 		super();
 		this._video = '';
+		this._playlist = '';
+		this._index = 0;
+		this._autoplay = false;
+		this._userInteracted = false;
 		this._player = null;
 		this._duration = 0;
 		this._timer = null;
@@ -44,6 +48,8 @@ class LCYouTube extends HTMLElement {
         .fs{cursor:pointer;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
         .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,0,0,.85);color:#fff;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
         .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
+        .sound-hint{position:absolute;top:15px;right:15px;background:rgba(0,0,0,.65);color:#fff;padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
+        .sound-hint.hide{display:none}
         @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
         .root{ -webkit-touch-callout:none; -webkit-user-select:none; -moz-user-select:none; user-select:none }
       </style>
@@ -54,6 +60,7 @@ class LCYouTube extends HTMLElement {
           </div>
           <div id="player"></div>
           <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
+          <div class="sound-hint hide" id="soundHint">🔊 Toca para activar sonido</div>
           <div class="controls" id="controls">
             <div class="btn" id="playPause" title="Reproducir/Pausar">▶︎</div>
             <div class="progress" id="progress" title="Buscar">
@@ -69,8 +76,28 @@ class LCYouTube extends HTMLElement {
     `;
 	}
 
+	_parseBool(val){ if (val == null) return false; const s = String(val).toLowerCase().trim(); return s === '1' || s === 'true' || s === 'yes' || s === ''; }
+
+	_parseListId(val){
+     if (!val) return '';
+     try {
+       // Si viene una URL de embed o watch con ?list=
+       if (/^https?:\/\//i.test(val)) {
+         const u = new URL(val, window.location.href);
+         const id = u.searchParams.get('list');
+         if (id) return id;
+       }
+     } catch(_) {}
+     // Si parece un ID de playlist (PL, UU, OL, RD)
+     if (/^(PL|UU|OL|RD)[A-Za-z0-9_-]+$/.test(val)) return val;
+     return '';
+   }
+
 	connectedCallback() {
 		this._video = this.getAttribute('video') || '';
+		this._playlist = this._parseListId(this.getAttribute('playlist') || '');
+		this._index = parseInt(this.getAttribute('index') || '0', 10) || 0;
+		this._autoplay = this._parseBool(this.getAttribute('autoplay')) || this.hasAttribute('autoplay');
 		this._cacheEls();
 		this._bindUI();
 		this._mountPlayer();
@@ -84,6 +111,27 @@ class LCYouTube extends HTMLElement {
 			if (this._player) { this._player.loadVideoById(this._video); }
 			this._isLive = false;
 		}
+		if (name === 'playlist' && oldV !== newV) {
+     this._playlist = this._parseListId(newV || '');
+     if (this._player) {
+       if (this._playlist) {
+         this._player.loadPlaylist({list: this._playlist, listType: 'playlist', index: this._index});
+       }
+     }
+   }
+   if (name === 'index' && oldV !== newV) {
+     this._index = parseInt(newV || '0', 10) || 0;
+     if (this._player && this._playlist) {
+       try { this._player.playVideoAt(this._index); } catch(_) {}
+     }
+   }
+   if (name === 'autoplay' && oldV !== newV) {
+     this._autoplay = this._parseBool(newV) || this.hasAttribute('autoplay');
+     // Si ya existe el player y se activa autoplay, intenta reproducir en mute
+     if (this._player && this._autoplay) {
+       try { this._player.mute(); this._player.playVideo(); } catch(_) {}
+     }
+   }
 	}
 
 	_cacheEls() {
@@ -92,6 +140,7 @@ class LCYouTube extends HTMLElement {
 		this.$overlay = r.getElementById('overlay');
 		this.$player = r.getElementById('player');
 		this.$live = r.getElementById('live');
+		this.$soundHint = r.getElementById('soundHint');
 		this.$progress = r.getElementById('progress');
 		this.$bar = r.getElementById('bar');
 		this.$seek = r.getElementById('seek');
@@ -129,8 +178,29 @@ class LCYouTube extends HTMLElement {
 		this._blinkControls = blinkControls;
 		['mousemove', 'touchstart'].forEach(evt => this.$wrap.addEventListener(evt, blinkControls));
 
+		// Inicializar visibilidad del hint de sonido
+		if (this.$soundHint) {
+			if (this._autoplay) this.$soundHint.classList.remove('hide'); else this.$soundHint.classList.add('hide');
+		}
+
+		// Handler del hint
+		if (this._autoplay && this.$soundHint) {
+			this.$soundHint.addEventListener('click', (e) => {
+				e.stopPropagation();
+				try {
+					if (this._player?.isMuted && this._player.isMuted()) this._player.unMute();
+					this._player?.setVolume?.(parseInt(this.$vol.value, 10));
+					this._player?.playVideo?.();
+				} catch(_) {}
+				this.$soundHint.classList.add('hide');
+				this._userInteracted = true;
+			});
+		}
+
 		// Overlay: play/pause
 		this.$overlay.addEventListener('click', () => {
+			if (!this._userInteracted) { this._userInteracted = true; try { if (this._player.isMuted && this._player.isMuted()) { this._player.unMute(); this._player.setVolume(parseInt(this.$vol.value, 10)); } } catch(_) {} }
+			if (this.$soundHint) this.$soundHint.classList.add('hide');
 			const st = this._player?.getPlayerState?.();
 			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
 		});
@@ -138,6 +208,8 @@ class LCYouTube extends HTMLElement {
 
 		// Botón pequeño play/pause
 		this.$playBtn.addEventListener('click', () => {
+			if (!this._userInteracted) { this._userInteracted = true; try { if (this._player.isMuted && this._player.isMuted()) { this._player.unMute(); this._player.setVolume(parseInt(this.$vol.value, 10)); } } catch(_) {} }
+			if (this.$soundHint) this.$soundHint.classList.add('hide');
 			const st = this._player?.getPlayerState?.();
 			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
 		});
@@ -185,18 +257,35 @@ class LCYouTube extends HTMLElement {
 	}
 
 	async _mountPlayer() {
-		if (!this._video) return;
+		if (!this._video && !this._playlist) return;
 		await window.__ytApiReadyPromise;
+		const baseVars = { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3, autoplay: this._autoplay ? 1 : 0 };
+		let config = { playerVars: baseVars };
+		if (this._playlist) {
+			config.playerVars = { ...baseVars, listType: 'playlist', list: this._playlist, index: this._index };
+			config.videoId = undefined;
+		} else {
+			config.videoId = this._video;
+		}
 		this._player = new YT.Player(this.$player, {
-			videoId: this._video,
-			playerVars: { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3 },
+			...config,
 			events: { onReady: () => this._onReady(), onStateChange: (e) => this._onStateChange(e) }
 		});
 	}
 
 	_onReady() {
 		this._player.setVolume(parseInt(this.$vol.value, 10));
+    if (this._autoplay) {
+      try { this._player.mute(); } catch(_) {}
+    }
 		this._duration = this._player.getDuration() || 0;
+    // Si es playlist, asegura que esté cargada desde el índice indicado
+    if (this._playlist) {
+      try { this._player.playVideoAt(this._index); } catch(_) {}
+    }
+    if (this._autoplay) {
+      try { this._player.playVideo(); } catch(_) {}
+    }
 		this._updateUI();
     this._setLiveUI(this._detectLive());
 	}
