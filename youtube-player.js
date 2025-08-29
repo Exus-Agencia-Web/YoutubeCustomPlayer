@@ -67,6 +67,32 @@ class LCYouTube extends HTMLElement {
         @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
         .root{ -webkit-touch-callout:none; -webkit-user-select:none; -moz-user-select:none; user-select:none }
         .yt-wrap.live .controls{opacity:1;pointer-events:auto}
+        /* === Accesibilidad móvil / touch === */
+        /* Respeta la zona segura de iOS (home bar) y hace la barra más grande para dedo */
+        :root { --lc-safe: env(safe-area-inset-bottom, 0px); }
+        /* En dispositivos táctiles, no ocultar controles por hover */
+        @media (hover: none) {
+          .yt-wrap .controls{opacity:1;pointer-events:auto}
+        }
+        /* Aumenta el padding inferior considerando la zona segura */
+        .controls{padding-bottom: calc(10px + var(--lc-safe));}
+        /* Ajustes específicos para pantallas pequeñas */
+        @media (max-width: 600px){
+          .controls{gap:8px;padding:12px 10px calc(12px + var(--lc-safe));}
+          .btn,.time,.vol,.fs{font:500 15px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
+          .progress{height:12px}
+          .progress .seek{width:18px;height:18px}
+          .time{min-width:90px}
+        }
+        /* Controles de volumen y GoLive compactos en móvil */
+        @media (max-width:600px){
+          .vol{display:none !important;}          /* Oculta slider */
+          #goLive{display:none !important;}      /* Oculta botón para liberar espacio */
+          .vol-toggle{display:inline-flex;}      /* Muestra botón toggle */
+        }
+        @media (min-width:601px){
+          .vol-toggle{display:none;}             /* En desktop escondemos el botón simple */
+        }
       </style>
       <div class="root">
         <div class="yt-wrap" id="wrap">
@@ -88,6 +114,7 @@ class LCYouTube extends HTMLElement {
             <div class="time" id="time">00:00 / 00:00</div>
             <div class="btn btn-live" id="goLive" title="Ir al punto en vivo"><span class="dot"></span>&nbsp; IR AL VIVO</div>
             <div class="vol">🔊 <input type="range" id="volume" min="0" max="100" value="80" /></div>
+            <div class="btn vol-toggle" id="volToggle" title="Silenciar/Activar volumen">🔊</div>
             <div class="fs btn" id="fs" title="Pantalla completa">⛶</div>
           </div>
         </div>
@@ -239,6 +266,7 @@ class LCYouTube extends HTMLElement {
 		this.$time = r.getElementById('time');
 		this.$goLive = r.getElementById('goLive');
 		this.$vol = r.getElementById('volume');
+    this.$volToggle = r.getElementById('volToggle');
 		this.$fs = r.getElementById('fs');
 		this.$playBtn = r.getElementById('playPause');
 		this.$error = r.getElementById('errorMask');
@@ -463,6 +491,22 @@ class LCYouTube extends HTMLElement {
 
 		// Volumen y fullscreen
 		this.$vol.addEventListener('input', () => { this._player.setVolume(parseInt(this.$vol.value, 10)); });
+    if (this.$volToggle) {
+      this.$volToggle.addEventListener('click', () => {
+        try {
+          const cur = typeof this._player?.getVolume === 'function' ? this._player.getVolume() : 80;
+          const isMuted = (this._player?.isMuted && this._player.isMuted()) || cur === 0 || (this.$vol && parseInt(this.$vol.value,10) === 0);
+          if (isMuted) {
+            if (this._player?.isMuted && this._player.isMuted()) this._player.unMute();
+            this._player?.setVolume?.(80);
+            if (this.$vol) this.$vol.value = 80;
+          } else {
+            this._player?.setVolume?.(0);
+          }
+          this._userInteracted = true;
+        } catch(_) {}
+      });
+    }
 		this.$fs.addEventListener('click', () => {
 			const el = this.$wrap; const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen; if (req) req.call(el);
 		});
@@ -579,6 +623,8 @@ class LCYouTube extends HTMLElement {
 		if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
 		// Forzar la detección de LIVE en cada ciclo
 		const isLiveNow = this._detectLive();
+    const compactTime = (typeof window !== 'undefined' && window.matchMedia) ?
+      (window.matchMedia('(max-width: 600px)').matches || window.matchMedia('(hover: none)').matches) : false;
 		this._setLiveUI(isLiveNow);
 		const t = this._player.getCurrentTime() || 0;
 		// Actualizar duración previa SIEMPRE, incluso si es 0
@@ -590,9 +636,9 @@ class LCYouTube extends HTMLElement {
 		if (isLiveNow && !this._hasLiveDVR()) {
 			if (this.$bar) this.$bar.style.width = '100%';
 			if (this.$seek) this.$seek.style.left = '100%';
-			if (this.$time) this.$time.textContent = 'EN VIVO';
+			if (this.$time) this.$time.textContent = compactTime ? this._fmt(t) : 'EN VIVO';
 			if (this.$goLive) this.$goLive.style.display = 'none';
-			return;
+			if (!compactTime) return; // en desktop mantenemos comportamiento previo
 		}
 		// Cálculo de barra y seek
 		let pct = 0;
@@ -630,15 +676,19 @@ class LCYouTube extends HTMLElement {
 		}
 		this.$bar.style.width = (pct * 100) + '%';
 		this.$seek.style.left = (pct * 100) + '%';
-		if (isLiveNow) {
-			this.$time.textContent = `${this._fmt(t)} / EN VIVO`;
-		} else {
-			this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
-		}
+    if (compactTime) {
+      this.$time.textContent = this._fmt(t);
+    } else if (isLiveNow) {
+      this.$time.textContent = `${this._fmt(t)} / EN VIVO`;
+    } else {
+      this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+    }
 	}
 
 	_immediateUI(target) {
     if (this._isLive && !this._hasLiveDVR()) return;
+    const compactTime = (typeof window !== 'undefined' && window.matchMedia) ?
+      (window.matchMedia('(max-width: 600px)').matches || window.matchMedia('(hover: none)').matches) : false;
     let pct = 0;
     if (this._isLive && this._hasLiveDVR()) {
       const { start, end } = this._getDvrRange();
@@ -653,7 +703,9 @@ class LCYouTube extends HTMLElement {
     }
     this.$bar.style.width = (pct * 100) + '%';
     this.$seek.style.left = (pct * 100) + '%';
-    if (this._isLive) {
+    if (compactTime) {
+      this.$time.textContent = this._fmt(this._player?.getCurrentTime?.() || target || 0);
+    } else if (this._isLive) {
       this.$time.textContent = `${this._fmt(this._player?.getCurrentTime?.() || target)} / EN VIVO`;
     } else {
       this.$time.textContent = `${this._fmt(target)} / ${this._fmt(this._duration)}`;
