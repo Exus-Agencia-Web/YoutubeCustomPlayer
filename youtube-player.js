@@ -45,6 +45,10 @@ class LCYouTube extends HTMLElement {
         .btn,.time,.vol,.fs{color:#fff;font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
         .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.12);cursor:pointer}
         .btn:hover{background:rgba(255,255,255,.2)}
+        .btn-live{background:rgba(255,0,0,.85); font-weight:600}
+        .btn-live:hover{background:rgba(255,0,0,.95)}
+        .btn-live .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
+        #goLive{display:none}
         .progress{position:relative;flex:1;height:6px;background:rgba(255,255,255,.25);border-radius:999px;cursor:pointer}
         .progress.disabled{opacity:.5; cursor:not-allowed}
         .progress.disabled .seek{display:none}
@@ -82,6 +86,7 @@ class LCYouTube extends HTMLElement {
               <div class="seek" id="seek"></div>
             </div>
             <div class="time" id="time">00:00 / 00:00</div>
+            <div class="btn btn-live" id="goLive" title="Ir al punto en vivo"><span class="dot"></span>&nbsp; IR AL VIVO</div>
             <div class="vol">🔊 <input type="range" id="volume" min="0" max="100" value="80" /></div>
             <div class="fs btn" id="fs" title="Pantalla completa">⛶</div>
           </div>
@@ -214,6 +219,7 @@ class LCYouTube extends HTMLElement {
 		this.$bar = r.getElementById('bar');
 		this.$seek = r.getElementById('seek');
 		this.$time = r.getElementById('time');
+		this.$goLive = r.getElementById('goLive');
 		this.$vol = r.getElementById('volume');
 		this.$fs = r.getElementById('fs');
 		this.$playBtn = r.getElementById('playPause');
@@ -331,6 +337,22 @@ class LCYouTube extends HTMLElement {
 			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
 		});
 
+		// Botón IR AL VIVO: salta al borde en vivo (fin de la ventana DVR)
+		if (this.$goLive) {
+		  this.$goLive.addEventListener('click', (e) => {
+			e.stopPropagation();
+			try {
+			  if (this._isLive && this._hasLiveDVR()) {
+				const { end } = this._getDvrRange();
+				const target = Math.max(0, end - 0.5); // pequeño offset para asegurar reproducción
+				this._player.seekTo(target, true);
+				this._player.playVideo();
+				this._immediateUI(target);
+			  }
+			} catch(_) {}
+		  });
+		}
+
 		// Seek con click
 		this.$progress.addEventListener('click', (e) => {
       if ((this._isLive && !this._hasLiveDVR()) || this.$progress.classList.contains('disabled')) return;
@@ -340,6 +362,8 @@ class LCYouTube extends HTMLElement {
       if (this._isLive && this._hasLiveDVR()) {
         const { start, end } = this._getDvrRange();
         const target = start + pct * (end - start);
+        // Marcar interacción para que se considere "retrasado" si corresponde
+        try { this._userInteracted = true; } catch(_) {}
         this._player.seekTo(target, true);
         try { this._player.playVideo(); } catch(_) {}
         this._immediateUI(target);
@@ -370,6 +394,8 @@ class LCYouTube extends HTMLElement {
       if (this._isLive && this._hasLiveDVR()) {
         const { start, end } = this._getDvrRange();
         target = Math.min(Math.max(target, start), end);
+        // Marcar interacción para que se considere "retrasado" si corresponde
+        try { this._userInteracted = true; } catch(_) {}
       }
       this._player.seekTo(target, true);
       try { this._player.playVideo(); } catch(_) {}
@@ -392,6 +418,8 @@ class LCYouTube extends HTMLElement {
 				if (this._isLive && this._hasLiveDVR()) {
 				  const { start, end } = this._getDvrRange();
 				  target = Math.min(Math.max(target, start), end);
+				  // Marcar interacción para que se considere "retrasado" si corresponde
+				  try { this._userInteracted = true; } catch(_) {}
 				}
 				this._player.seekTo(target, true);
 				try { this._player.playVideo(); } catch(_) {}
@@ -514,6 +542,8 @@ class LCYouTube extends HTMLElement {
       if (this.$bar) this.$bar.style.width = '100%';
       if (this.$seek) this.$seek.style.left = '100%';
       if (this.$time) this.$time.textContent = 'EN VIVO';
+      // Mostrar/ocultar botón IR AL VIVO si estamos retrasados respecto al borde en vivo
+      if (this.$goLive) this.$goLive.style.display = 'none';
       return;
     }
     const t = this._player.getCurrentTime() || 0;
@@ -538,6 +568,17 @@ class LCYouTube extends HTMLElement {
         this._duration = Math.max(this._duration, t);
       }
       pct = this._duration ? (t / this._duration) : 0;
+    }
+    // Mostrar/ocultar botón IR AL VIVO si estamos retrasados respecto al borde en vivo
+    if (this.$goLive) {
+      if (this._isLive && this._hasLiveDVR()) {
+        const { end } = this._getDvrRange();
+        const lag = Math.max(0, end - t);
+        const behind = lag > 2; // umbral de 2s para evitar parpadeos
+        this.$goLive.style.display = behind ? 'inline-flex' : 'none';
+      } else {
+        this.$goLive.style.display = 'none';
+      }
     }
     this.$bar.style.width = (pct * 100) + '%';
     this.$seek.style.left = (pct * 100) + '%';
