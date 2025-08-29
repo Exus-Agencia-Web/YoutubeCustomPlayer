@@ -98,8 +98,36 @@ class LCYouTube extends HTMLElement {
      return '';
    }
 
+  _parseVideoId(val){
+    if (!val) return '';
+    try {
+      if (/^https?:\/\//i.test(val)) {
+        const u = new URL(val, window.location.href);
+        // 1) Standard watch URL: ?v=
+        const vParam = u.searchParams.get('v');
+        if (vParam) return vParam;
+        // 2) youtu.be/<id>
+        const host = (u.hostname || '').replace(/^www\./, '');
+        const parts = (u.pathname || '').split('/').filter(Boolean);
+        if (host === 'youtu.be' && parts[0]) return parts[0];
+        // 3) /embed/<id>
+        const eIdx = parts.indexOf('embed');
+        if (eIdx !== -1 && parts[eIdx + 1]) return parts[eIdx + 1];
+        // 4) /shorts/<id>
+        const sIdx = parts.indexOf('shorts');
+        if (sIdx !== -1 && parts[sIdx + 1]) return parts[sIdx + 1];
+        // 5) /live/<id>
+        const lIdx = parts.indexOf('live');
+        if (lIdx !== -1 && parts[lIdx + 1]) return parts[lIdx + 1];
+      }
+    } catch(_) {}
+    // Fallback: si parece un ID válido de 11 caracteres
+    if (/^[A-Za-z0-9_-]{11}$/.test(val)) return val;
+    return '';
+  }
+
 	connectedCallback() {
-		this._video = this.getAttribute('video') || '';
+		this._video = this._parseVideoId(this.getAttribute('video') || '');
 		this._playlist = this._parseListId(this.getAttribute('playlist') || '');
 				let idxAttr = parseInt(this.getAttribute('index') || '0', 10);
 					if (idxAttr === -1) {
@@ -119,8 +147,8 @@ class LCYouTube extends HTMLElement {
 
 	attributeChangedCallback(name, oldV, newV) {
 		if (name === 'video' && oldV !== newV) {
-			this._video = newV || '';
-			if (this._player) { this._player.loadVideoById(this._video); }
+			this._video = this._parseVideoId(newV || '');
+			if (this._player && this._video) { this._player.loadVideoById(this._video); }
 			this._isLive = false;
 		}
 		if (name === 'playlist' && oldV !== newV) {
