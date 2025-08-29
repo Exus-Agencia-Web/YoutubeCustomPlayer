@@ -60,6 +60,10 @@ class LCYouTube extends HTMLElement {
         .vol{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
         .vol input{accent-color:#fff}
         .fs{cursor:pointer;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
+        .vol-toggle{position:relative;align-items:center;justify-content:center;color:#fff}
+        .vol-toggle svg{width:20px;height:20px;display:block}
+        .vol-toggle svg path{fill:currentColor !important} /* fuerza a usar currentColor */
+        .vol-toggle.muted{color:#ff3b30}
         .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,0,0,.85);color:#fff;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
         .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
         .sound-hint{position:absolute;top:15px;right:15px;background:rgba(0,0,0,.65);color:#fff;padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
@@ -115,8 +119,17 @@ class LCYouTube extends HTMLElement {
             </div>
             <div class="time" id="time">00:00 / 00:00</div>
             <div class="btn btn-live" id="goLive" title="Ir al punto en vivo"><span class="dot"></span>&nbsp; IR AL VIVO</div>
-            <div class="vol">🔊 <input type="range" id="volume" min="0" max="100" value="80" /></div>
-            <div class="btn vol-toggle" id="volToggle" title="Silenciar/Activar volumen">🔊</div>
+            <div class="btn vol-toggle" id="volToggle" title="Silenciar/Activar volumen">
+              <svg version="1.0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+                <g><g>
+                  <path d="M59.998,28.001h-7.999c-2.211,0-4,1.789-4,4s1.789,4,4,4h7.999c2.211,0,4-1.789,4-4 S62.209,28.001,59.998,28.001z"></path>
+                  <path d="M49.71,19.466l6.929-4c1.914-1.105,2.57-3.551,1.461-5.465c-1.102-1.914-3.547-2.57-5.46-1.465l-6.93,4 c-1.914,1.105-2.57,3.551-1.461,5.464C45.351,19.915,47.796,20.571,49.71,19.466z"></path>
+                  <path d="M56.639,48.535l-6.929-3.999c-1.914-1.105-4.355-0.449-5.461,1.464c-1.105,1.914-0.453,4.359,1.461,5.465 l6.93,4c1.913,1.105,4.358,0.449,5.464-1.465S58.553,49.641,56.639,48.535z"></path>
+                  <path d="M37.53,0.307c-1.492-0.625-3.211-0.277-4.359,0.867L18.343,16.001H4c-2.211,0-4,1.789-4,4v24 C0,46.211,1.789,48,4,48h14.343l14.828,14.828C33.937,63.594,34.96,64,35.999,64c0.516,0,1.035-0.098,1.531-0.305 c1.496-0.617,2.469-2.078,2.469-3.695V4.001C39.999,2.384,39.026,0.924,37.53,0.307z"></path>
+                </g></g>
+              </svg>
+            </div>
+            <div class="vol"><input type="range" id="volume" min="0" max="100" value="100" /></div>
             <div class="fs btn" id="fs" title="Pantalla completa">⛶</div>
           </div>
         </div>
@@ -361,6 +374,7 @@ class LCYouTube extends HTMLElement {
         this._player.unMute();
         const v = this.$vol ? parseInt(this.$vol.value,10) || 100 : 100;
         this._player.setVolume(v);
+        if (this.$volToggle) this.$volToggle.classList.remove('muted');
       }
     }catch(_){}
   }
@@ -516,6 +530,7 @@ class LCYouTube extends HTMLElement {
 		  const v = parseInt(this.$vol.value, 10);
 		  this._player.setVolume(v);
 		  this._userMuted = (v === 0);
+      if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
 		  if (v === 0) { try{ this._player.mute && this._player.mute(); }catch(_){} } else { try{ this._player.unMute && this._player.unMute(); }catch(_){} }
 		});
     if (this.$volToggle) {
@@ -534,6 +549,7 @@ class LCYouTube extends HTMLElement {
             if (this.$vol) this.$vol.value = 0;
             this._userMuted = true;
           }
+          if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
           this._userInteracted = true;
         } catch(_) {}
       });
@@ -587,7 +603,8 @@ class LCYouTube extends HTMLElement {
 		if (this._player && typeof this._player.setVolume === 'function') {
 			this._player.setVolume(parseInt(this.$vol.value, 10));
 		}
-		this._userMuted = (parseInt(this.$vol.value,10) === 0);
+		this._userMuted = this._autoplay || (parseInt(this.$vol.value,10) === 0);
+    if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
 		if (this._autoplay) {
 			try { if (this._player && typeof this._player.mute === 'function') this._player.mute(); } catch(_) {}
 		}
