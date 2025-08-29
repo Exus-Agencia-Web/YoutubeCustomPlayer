@@ -234,48 +234,63 @@ class LCYouTube extends HTMLElement {
 	  if (this.$controls) this.$controls.style.display = 'none';
 	  if (this.$error) this.$error.classList.add('show');
 	}
+	
+	_detectLive() {
+	  try {
+	    // No aplica para playlists
+	    if (this._playlist) return false;
 
-  _detectLive(){
-    try {
-      if (this._playlist) return false;
-      const d = this._player?.getDuration?.() || 0;
-      const st = this._player?.getPlayerState?.();
-      const active = (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED);
-      const raw = (d === 0 && active) || (d > 0 && this._lastDuration > 0 && d > this._lastDuration + 1 && active);
-      // Histeresis: solo cambiamos si se mantiene 2 ticks consecutivos
-      if (raw !== this._liveStable) {
-        this._liveTicks++;
-        if (this._liveTicks >= 2) { this._liveStable = raw; this._liveTicks = 0; }
-      } else {
-        this._liveTicks = 0;
-      }
-      return this._liveStable;
-    } catch(_) { return this._liveStable || false; }
-  }
+	    // 1) Señal primaria y estable expuesta por la IFrame API
+	    const data = this._player?.getVideoData?.() || {};
+	    if (typeof data.isLiveContent === 'boolean') {
+	      return data.isLiveContent;
+	    }
 
-  _hasLiveDVR(){
-    try {
-      if (!this._isLive) return false;
-      const d = this._player?.getDuration?.() || 0;
-      const raw = d > 0; // DVR existe si duración > 0
-      if (raw !== this._dvrStable) {
-        this._dvrTicks++;
-        if (this._dvrTicks >= 2) { this._dvrStable = raw; this._dvrTicks = 0; }
-      } else {
-        this._dvrTicks = 0;
-      }
-      return this._dvrStable;
-    } catch(_) { return this._dvrStable || false; }
-  }
+	    // 2) Fallbacks: estado activo + duración característica
+	    const st = this._player?.getPlayerState?.();
+	    const active = st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED;
+	    const dur = Number(this._player?.getDuration?.() || 0);
 
-  _getDvrRange(){
-    // Devuelve el rango [start,end] para la ventana DVR visible/usable
-    // end = borde en vivo (duration), start = end - ventana (clamp >= 0)
-    const end = Math.max(0, this._player?.getDuration?.() || this._duration || 0);
-    const win = Math.max(60, Math.min(this._dvrWindow, end));
-    const start = Math.max(0, end - win);
-    return { start, end };
-  }
+	    // En transmisiones en vivo SIN DVR la duración suele ser 0 mientras el player está activo
+	    if (active && dur === 0) return true;
+
+	    // En vivo con DVR: la duración existe (>0) y puede crecer con el tiempo, pero sin `isLiveContent`
+	    // asumimos "en vivo" si vemos duración > 0 mientras está activo y el tiempo actual está muy cerca del borde (escenario común al iniciar).
+	    if (active && dur > 0) {
+	      const t = Number(this._player?.getCurrentTime?.() || 0);
+	      // Si t está dentro de la ventana [0, dur] y dur es razonable, tratamos como live.
+	      if (t >= 0 && t <= dur + 1) return true;
+	    }
+
+	    return false;
+	  } catch (_) {
+	    return false;
+	  }
+	}
+	_hasLiveDVR() {
+	  try {
+	    if (!this._isLive) return false;
+	    const d = Number(this._player?.getDuration?.() || 0);
+	    // En YouTube, si una transmisión en vivo tiene DVR, la duración reportada es > 0
+	    const raw = d > 0;
+	    if (raw !== this._dvrStable) {
+	      this._dvrTicks++;
+	      if (this._dvrTicks >= 2) { this._dvrStable = raw; this._dvrTicks = 0; }
+	    } else {
+	      this._dvrTicks = 0;
+	    }
+	    return this._dvrStable;
+	  } catch(_) { return this._dvrStable || false; }
+	}
+
+	_getDvrRange() {
+		// Devuelve el rango [start,end] para la ventana DVR visible/usable
+		// end = borde en vivo (duration), start = end - ventana (clamp >= 0)
+		const end = Math.max(0, this._player?.getDuration?.() || this._duration || 0);
+		const win = Math.max(60, Math.min(this._dvrWindow, end));
+		const start = Math.max(0, end - win);
+		return { start, end };
+	}
 
   _setLiveUI(isLive){
     const prevLive = !!this._isLive;
@@ -536,57 +551,65 @@ class LCYouTube extends HTMLElement {
 	}
 
 	_updateUI() {
-    if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
-    this._setLiveUI(this._detectLive());
-    if (this._isLive && !this._hasLiveDVR()) {
-      if (this.$bar) this.$bar.style.width = '100%';
-      if (this.$seek) this.$seek.style.left = '100%';
-      if (this.$time) this.$time.textContent = 'EN VIVO';
-      // Mostrar/ocultar botón IR AL VIVO si estamos retrasados respecto al borde en vivo
-      if (this.$goLive) this.$goLive.style.display = 'none';
-      return;
-    }
-    const t = this._player.getCurrentTime() || 0;
-    this._duration = this._player.getDuration() || this._duration || 0;
-    // Guardar duración previa para detección de LIVE con DVR
-    if (this._duration > 0) this._lastDuration = this._duration;
-    // Live con/sin DVR: ajustar cálculo de barra
-    let pct = 0;
-    if (this._isLive) {
-      if (this._hasLiveDVR()) {
-        const { start, end } = this._getDvrRange();
-        const span = Math.max(1, end - start);
-        const clamped = Math.min(Math.max(t, start), end);
-        pct = (clamped - start) / span;
-      } else {
-        // sin DVR: barra llena
-        pct = 1;
-      }
-    } else {
-      // VOD
-      if (!this._duration || this._duration === 0) {
-        this._duration = Math.max(this._duration, t);
-      }
-      pct = this._duration ? (t / this._duration) : 0;
-    }
-    // Mostrar/ocultar botón IR AL VIVO si estamos retrasados respecto al borde en vivo
-    if (this.$goLive) {
-      if (this._isLive && this._hasLiveDVR()) {
-        const { end } = this._getDvrRange();
-        const lag = Math.max(0, end - t);
-        const behind = lag > 2; // umbral de 2s para evitar parpadeos
-        this.$goLive.style.display = behind ? 'inline-flex' : 'none';
-      } else {
-        this.$goLive.style.display = 'none';
-      }
-    }
-    this.$bar.style.width = (pct * 100) + '%';
-    this.$seek.style.left = (pct * 100) + '%';
-    if (this._isLive) {
-      this.$time.textContent = `${this._fmt(t)} / EN VIVO`;
-    } else {
-      this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
-    }
+		if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
+		// Forzar la detección de LIVE en cada ciclo
+		const isLiveNow = this._detectLive();
+		this._setLiveUI(isLiveNow);
+		const t = this._player.getCurrentTime() || 0;
+		// Actualizar duración previa SIEMPRE, incluso si es 0
+		this._lastDuration = this._duration;
+		this._duration = this._player.getDuration() || this._duration || 0;
+		// Si es LIVE con DVR, extender duración dinámicamente
+		if (isLiveNow && this._duration < t) this._duration = t;
+		// Indicadores de LIVE y botón IR AL VIVO
+		if (isLiveNow && !this._hasLiveDVR()) {
+			if (this.$bar) this.$bar.style.width = '100%';
+			if (this.$seek) this.$seek.style.left = '100%';
+			if (this.$time) this.$time.textContent = 'EN VIVO';
+			if (this.$goLive) this.$goLive.style.display = 'none';
+			return;
+		}
+		// Cálculo de barra y seek
+		let pct = 0;
+		if (isLiveNow) {
+			if (this._hasLiveDVR()) {
+				const { start, end } = this._getDvrRange();
+				const span = Math.max(1, end - start);
+				const clamped = Math.min(Math.max(t, start), end);
+				pct = (clamped - start) / span;
+			} else {
+				pct = 1;
+			}
+		} else {
+			if (!this._duration || this._duration === 0) {
+				this._duration = Math.max(this._duration, t);
+			}
+			pct = this._duration ? (t / this._duration) : 0;
+		}
+		// Mostrar/ocultar botón IR AL VIVO si estamos retrasados respecto al borde en vivo
+		if (this.$goLive) {
+			if (isLiveNow && this._hasLiveDVR()) {
+				const { end } = this._getDvrRange();
+				const lag = Math.max(0, end - t);
+				// Mantener el botón visible si el usuario está retrasado más de 1 segundo
+				// y ocultarlo solo si está realmente en el borde en vivo (menos de 0.5s)
+				if (lag > 1) {
+					this.$goLive.style.display = 'inline-flex';
+				} else if (lag <= 0.5) {
+					this.$goLive.style.display = 'none';
+				}
+				// Si está entre 0.5 y 1 segundo, mantener el estado anterior para evitar parpadeos
+			} else {
+				this.$goLive.style.display = 'none';
+			}
+		}
+		this.$bar.style.width = (pct * 100) + '%';
+		this.$seek.style.left = (pct * 100) + '%';
+		if (isLiveNow) {
+			this.$time.textContent = `${this._fmt(t)} / EN VIVO`;
+		} else {
+			this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+		}
 	}
 
 	_immediateUI(target) {
