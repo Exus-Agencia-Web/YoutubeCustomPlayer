@@ -27,9 +27,11 @@ class LCYouTube extends HTMLElement {
 		this._liveTicks = 0;
 		this._dvrStable = false;
 		this._dvrTicks = 0;
+		this._userMuted = false; // rastrea si el usuario decidió silenciar
 		this.attachShadow({ mode: 'open' });
 		this.shadowRoot.innerHTML = `
       <style>
+        .vol-toggle{display:inline-flex}
         :host{display:block}
         .yt-wrap{position:relative;max-width:1920px;margin:auto;background:#000;aspect-ratio:16/9;border-radius:5px}
         .overlay,.controls,#player,.live-badge{border-radius:inherit}
@@ -91,7 +93,7 @@ class LCYouTube extends HTMLElement {
           .vol-toggle{display:inline-flex;}      /* Muestra botón toggle */
         }
         @media (min-width:601px){
-          .vol-toggle{display:none;}             /* En desktop escondemos el botón simple */
+          .vol-toggle{display:inline-flex;}             /* En desktop también mostramos el botón simple */
         }
       </style>
       <div class="root">
@@ -351,6 +353,18 @@ class LCYouTube extends HTMLElement {
     }
   }
 
+  _ensureAudioOnUserPlay(){
+    try{
+      if (!this._player) return;
+      const muted = this._player?.isMuted && this._player.isMuted();
+      if (muted && !this._userMuted){
+        this._player.unMute();
+        const v = this.$vol ? parseInt(this.$vol.value,10) || 100 : 100;
+        this._player.setVolume(v);
+      }
+    }catch(_){}
+  }
+
 	_bindUI() {
 		// Auto-hide de controles
 		this._controlsTimer = null;
@@ -377,13 +391,15 @@ class LCYouTube extends HTMLElement {
 					this._player?.playVideo?.();
 				} catch(_) {}
 				this.$soundHint.classList.add('hide');
+				this._userMuted = false;
 				this._userInteracted = true;
 			});
 		}
 
 		// Overlay: play/pause
 		this.$overlay.addEventListener('click', () => {
-			if (!this._userInteracted) { this._userInteracted = true; try { if (this._player.isMuted && this._player.isMuted()) { this._player.unMute(); this._player.setVolume(parseInt(this.$vol.value, 10)); } } catch(_) {} }
+			if (!this._userInteracted) { this._userInteracted = true; this._ensureAudioOnUserPlay(); }
+			else { this._ensureAudioOnUserPlay(); }
 			if (this.$soundHint) this.$soundHint.classList.add('hide');
 			const st = this._player?.getPlayerState?.();
 			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
@@ -392,7 +408,8 @@ class LCYouTube extends HTMLElement {
 
 		// Botón pequeño play/pause
 		this.$playBtn.addEventListener('click', () => {
-			if (!this._userInteracted) { this._userInteracted = true; try { if (this._player.isMuted && this._player.isMuted()) { this._player.unMute(); this._player.setVolume(parseInt(this.$vol.value, 10)); } } catch(_) {} }
+			if (!this._userInteracted) { this._userInteracted = true; this._ensureAudioOnUserPlay(); }
+			else { this._ensureAudioOnUserPlay(); }
 			if (this.$soundHint) this.$soundHint.classList.add('hide');
 			const st = this._player?.getPlayerState?.();
 			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
@@ -402,6 +419,7 @@ class LCYouTube extends HTMLElement {
 		if (this.$goLive) {
 		  this.$goLive.addEventListener('click', (e) => {
 			e.stopPropagation();
+			this._ensureAudioOnUserPlay();
 			try {
 			  if (this._isLive && this._hasLiveDVR()) {
 				const { end } = this._getDvrRange();
@@ -426,6 +444,7 @@ class LCYouTube extends HTMLElement {
         // Marcar interacción para que se considere "retrasado" si corresponde
         try { this._userInteracted = true; } catch(_) {}
         this._player.seekTo(target, true);
+        this._ensureAudioOnUserPlay();
         try { this._player.playVideo(); } catch(_) {}
         this._immediateUI(target);
       } else {
@@ -433,6 +452,7 @@ class LCYouTube extends HTMLElement {
         if (effDur > 0) {
           const target = effDur * pct;
           this._player.seekTo(target, true);
+          this._ensureAudioOnUserPlay();
           try { this._player.playVideo(); } catch(_) {}
           this._immediateUI(target);
         }
@@ -459,6 +479,7 @@ class LCYouTube extends HTMLElement {
         try { this._userInteracted = true; } catch(_) {}
       }
       this._player.seekTo(target, true);
+      this._ensureAudioOnUserPlay();
       try { this._player.playVideo(); } catch(_) {}
       this._immediateUI(target);
       blinkControls();
@@ -483,6 +504,7 @@ class LCYouTube extends HTMLElement {
 				  try { this._userInteracted = true; } catch(_) {}
 				}
 				this._player.seekTo(target, true);
+				this._ensureAudioOnUserPlay();
 				try { this._player.playVideo(); } catch(_) {}
 				this._immediateUI(target);
 				blinkControls();
@@ -490,18 +512,27 @@ class LCYouTube extends HTMLElement {
 		});
 
 		// Volumen y fullscreen
-		this.$vol.addEventListener('input', () => { this._player.setVolume(parseInt(this.$vol.value, 10)); });
+		this.$vol.addEventListener('input', () => {
+		  const v = parseInt(this.$vol.value, 10);
+		  this._player.setVolume(v);
+		  this._userMuted = (v === 0);
+		  if (v === 0) { try{ this._player.mute && this._player.mute(); }catch(_){} } else { try{ this._player.unMute && this._player.unMute(); }catch(_){} }
+		});
     if (this.$volToggle) {
       this.$volToggle.addEventListener('click', () => {
         try {
-          const cur = typeof this._player?.getVolume === 'function' ? this._player.getVolume() : 80;
+          const cur = typeof this._player?.getVolume === 'function' ? this._player.getVolume() : 100;
           const isMuted = (this._player?.isMuted && this._player.isMuted()) || cur === 0 || (this.$vol && parseInt(this.$vol.value,10) === 0);
           if (isMuted) {
-            if (this._player?.isMuted && this._player.isMuted()) this._player.unMute();
-            this._player?.setVolume?.(80);
-            if (this.$vol) this.$vol.value = 80;
+            this._player?.unMute?.();
+            this._player?.setVolume?.(100);
+            if (this.$vol) this.$vol.value = 100;
+            this._userMuted = false;
           } else {
             this._player?.setVolume?.(0);
+            this._player?.mute?.();
+            if (this.$vol) this.$vol.value = 0;
+            this._userMuted = true;
           }
           this._userInteracted = true;
         } catch(_) {}
@@ -556,6 +587,7 @@ class LCYouTube extends HTMLElement {
 		if (this._player && typeof this._player.setVolume === 'function') {
 			this._player.setVolume(parseInt(this.$vol.value, 10));
 		}
+		this._userMuted = (parseInt(this.$vol.value,10) === 0);
 		if (this._autoplay) {
 			try { if (this._player && typeof this._player.mute === 'function') this._player.mute(); } catch(_) {}
 		}
@@ -695,7 +727,7 @@ class LCYouTube extends HTMLElement {
       const span = Math.max(1, end - start);
       const clamped = Math.min(Math.max(target, start), end);
       pct = (clamped - start) / span;
-    } else {
+    } else {	
       if (this._isLive && (!this._duration || this._duration === 0)) {
         this._duration = Math.max(this._duration, target || 0);
       }
