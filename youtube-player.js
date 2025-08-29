@@ -23,6 +23,10 @@ class LCYouTube extends HTMLElement {
 		this._lastTap = 0;
 		this._lastDuration = 0;
 		this._dvrWindow = 14400; // 4 horas por defecto
+		this._liveStable = false;
+		this._liveTicks = 0;
+		this._dvrStable = false;
+		this._dvrTicks = 0;
 		this.attachShadow({ mode: 'open' });
 		this.shadowRoot.innerHTML = `
       <style>
@@ -58,6 +62,7 @@ class LCYouTube extends HTMLElement {
         .error-mask.show{display:flex}
         @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
         .root{ -webkit-touch-callout:none; -webkit-user-select:none; -moz-user-select:none; user-select:none }
+        .yt-wrap.live .controls{opacity:1;pointer-events:auto}
       </style>
       <div class="root">
         <div class="yt-wrap" id="wrap">
@@ -230,20 +235,31 @@ class LCYouTube extends HTMLElement {
       const d = this._player?.getDuration?.() || 0;
       const st = this._player?.getPlayerState?.();
       const active = (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED);
-      // Live sin DVR: duración 0
-      if (d === 0 && active) return true;
-      // Live con DVR: duración existe pero sigue creciendo con el tiempo
-      if (d > 0 && this._lastDuration > 0 && d > this._lastDuration + 1 && active) return true;
-      return false;
-    } catch(_) { return false; }
+      const raw = (d === 0 && active) || (d > 0 && this._lastDuration > 0 && d > this._lastDuration + 1 && active);
+      // Histeresis: solo cambiamos si se mantiene 2 ticks consecutivos
+      if (raw !== this._liveStable) {
+        this._liveTicks++;
+        if (this._liveTicks >= 2) { this._liveStable = raw; this._liveTicks = 0; }
+      } else {
+        this._liveTicks = 0;
+      }
+      return this._liveStable;
+    } catch(_) { return this._liveStable || false; }
   }
 
   _hasLiveDVR(){
     try {
       if (!this._isLive) return false;
       const d = this._player?.getDuration?.() || 0;
-      return d > 0; // DVR disponible si duración > 0
-    } catch(_) { return false; }
+      const raw = d > 0; // DVR existe si duración > 0
+      if (raw !== this._dvrStable) {
+        this._dvrTicks++;
+        if (this._dvrTicks >= 2) { this._dvrStable = raw; this._dvrTicks = 0; }
+      } else {
+        this._dvrTicks = 0;
+      }
+      return this._dvrStable;
+    } catch(_) { return this._dvrStable || false; }
   }
 
   _getDvrRange(){
@@ -256,13 +272,15 @@ class LCYouTube extends HTMLElement {
   }
 
   _setLiveUI(isLive){
-    this._isLive = !!isLive;
-    if (this.$live) this.$live.style.display = this._isLive ? 'inline-flex' : 'none';
+    const prevLive = !!this._isLive;
+    const nextLive = !!isLive;
+    this._isLive = nextLive;
+    if (this.$wrap) { if (nextLive) this.$wrap.classList.add('live'); else this.$wrap.classList.remove('live'); }
+    if (this.$live && prevLive !== nextLive) this.$live.style.display = nextLive ? 'inline-flex' : 'none';
     if (this.$progress) {
-      // Siempre mostrar la barra; deshabilitar cuando es LIVE sin DVR
       this.$progress.style.display = '';
-      if (this._isLive && !this._hasLiveDVR()) this.$progress.classList.add('disabled');
-      else this.$progress.classList.remove('disabled');
+      const shouldDisable = this._isLive && !this._hasLiveDVR();
+      if (shouldDisable) this.$progress.classList.add('disabled'); else this.$progress.classList.remove('disabled');
     }
   }
 
@@ -466,6 +484,7 @@ class LCYouTube extends HTMLElement {
 	_onStateChange(e) {
 		// Actualiza modo live por si cambia al cargar
 		this._setLiveUI(this._detectLive());
+		this._updateUI();
 		if (e.data === YT.PlayerState.CUED && this._autoplay) {
 			try { this._player.playVideo(); } catch(_) {}
 		}
