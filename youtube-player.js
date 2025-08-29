@@ -8,7 +8,7 @@ window.__ytApiReadyPromise = new Promise((resolve) => {
 });
 
 class LCYouTube extends HTMLElement {
-	static get observedAttributes() { return ['video','playlist','index','autoplay']; }
+	static get observedAttributes() { return ['video','playlist','index','autoplay','dvr-window']; }
 
 	constructor() {
 		super();
@@ -21,6 +21,8 @@ class LCYouTube extends HTMLElement {
 		this._duration = 0;
 		this._timer = null;
 		this._lastTap = 0;
+		this._lastDuration = 0;
+		this._dvrWindow = 14400; // 4 horas por defecto
 		this.attachShadow({ mode: 'open' });
 		this.shadowRoot.innerHTML = `
       <style>
@@ -40,6 +42,8 @@ class LCYouTube extends HTMLElement {
         .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.12);cursor:pointer}
         .btn:hover{background:rgba(255,255,255,.2)}
         .progress{position:relative;flex:1;height:6px;background:rgba(255,255,255,.25);border-radius:999px;cursor:pointer}
+        .progress.disabled{opacity:.5; cursor:not-allowed}
+        .progress.disabled .seek{display:none}
         .progress .bar{position:absolute;left:0;top:0;height:100%;width:0;background:#fff;border-radius:999px}
         .progress .seek{position:absolute;left:0;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#fff}
         .time{min-width:110px;text-align:center;opacity:.9}
@@ -138,6 +142,8 @@ class LCYouTube extends HTMLElement {
 						this._index = idxAttr > 0 ? idxAttr - 1 : 0;
 					}
 		this._autoplay = this._parseBool(this.getAttribute('autoplay')) || this.hasAttribute('autoplay');
+		const dvrAttr = parseInt(this.getAttribute('dvr-window') || '', 10);
+		if (!Number.isNaN(dvrAttr) && dvrAttr > 60) this._dvrWindow = dvrAttr;
 		this._cacheEls();
 		this._bindUI();
 		this._mountPlayer();
@@ -186,6 +192,10 @@ class LCYouTube extends HTMLElement {
 			}
 			this._updatePlaylistNav();
 		}
+		if (name === 'dvr-window' && oldV !== newV) {
+			const dvrAttr = parseInt(newV || '', 10);
+			if (!Number.isNaN(dvrAttr) && dvrAttr > 60) this._dvrWindow = dvrAttr;
+		}
 	}
 
 	_cacheEls() {
@@ -216,20 +226,44 @@ class LCYouTube extends HTMLElement {
 
   _detectLive(){
     try {
-      // Nunca marcar como EN VIVO cuando estamos en playlist
       if (this._playlist) return false;
       const d = this._player?.getDuration?.() || 0;
       const st = this._player?.getPlayerState?.();
-      // Considerar live solo cuando hay reproducción/carga real y duración 0
-      return d === 0 && (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED);
+      const active = (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING || st === YT.PlayerState.PAUSED);
+      // Live sin DVR: duración 0
+      if (d === 0 && active) return true;
+      // Live con DVR: duración existe pero sigue creciendo con el tiempo
+      if (d > 0 && this._lastDuration > 0 && d > this._lastDuration + 1 && active) return true;
+      return false;
     } catch(_) { return false; }
+  }
+
+  _hasLiveDVR(){
+    try {
+      if (!this._isLive) return false;
+      const d = this._player?.getDuration?.() || 0;
+      return d > 0; // DVR disponible si duración > 0
+    } catch(_) { return false; }
+  }
+
+  _getDvrRange(){
+    // Devuelve el rango [start,end] para la ventana DVR visible/usable
+    // end = borde en vivo (duration), start = end - ventana (clamp >= 0)
+    const end = Math.max(0, this._player?.getDuration?.() || this._duration || 0);
+    const win = Math.max(60, Math.min(this._dvrWindow, end));
+    const start = Math.max(0, end - win);
+    return { start, end };
   }
 
   _setLiveUI(isLive){
     this._isLive = !!isLive;
-    if(this.$live) this.$live.style.display = this._isLive ? 'inline-flex' : 'none';
-    // Mantener barra visible también en live (DVR)
-    if(this.$progress) this.$progress.style.display = '';
+    if (this.$live) this.$live.style.display = this._isLive ? 'inline-flex' : 'none';
+    if (this.$progress) {
+      // Siempre mostrar la barra; deshabilitar cuando es LIVE sin DVR
+      this.$progress.style.display = '';
+      if (this._isLive && !this._hasLiveDVR()) this.$progress.classList.add('disabled');
+      else this.$progress.classList.remove('disabled');
+    }
   }
 
 	_bindUI() {
@@ -281,33 +315,70 @@ class LCYouTube extends HTMLElement {
 
 		// Seek con click
 		this.$progress.addEventListener('click', (e) => {
-			const rect = this.$progress.getBoundingClientRect();
-			const x = e.clientX - rect.left;
-			const pct = Math.min(1, Math.max(0, x / rect.width));
-      const effDur = (this._duration && this._duration > 0) ? this._duration : (this._player?.getCurrentTime?.() || 0);
-      if (effDur > 0) {
-        const target = effDur * pct;
+      if ((this._isLive && !this._hasLiveDVR()) || this.$progress.classList.contains('disabled')) return;
+      const rect = this.$progress.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pct = Math.min(1, Math.max(0, x / rect.width));
+      if (this._isLive && this._hasLiveDVR()) {
+        const { start, end } = this._getDvrRange();
+        const target = start + pct * (end - start);
         this._player.seekTo(target, true);
+        try { this._player.playVideo(); } catch(_) {}
         this._immediateUI(target);
+      } else {
+        const effDur = (this._duration && this._duration > 0) ? this._duration : (this._player?.getCurrentTime?.() || 0);
+        if (effDur > 0) {
+          const target = effDur * pct;
+          this._player.seekTo(target, true);
+          try { this._player.playVideo(); } catch(_) {}
+          this._immediateUI(target);
+        }
       }
 		});
 
 		// Doble click/tap: ±10s
 		this.$overlay.addEventListener('dblclick', (e) => {
-			const rect = this.$overlay.getBoundingClientRect();
-			const x = e.clientX - rect.left; const mid = rect.width / 2;
-			const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
-			const target = Math.max(0, cur + delta);
-			this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
+      if (this._isLive && !this._hasLiveDVR()) return;
+      const rect = this.$overlay.getBoundingClientRect();
+      const x = e.clientX - rect.left; const mid = rect.width / 2;
+      let cur = this._player.getCurrentTime();
+      if (this._isLive && this._hasLiveDVR()) {
+        const { start, end } = this._getDvrRange();
+        // clamp current dentro del rango
+        cur = Math.min(Math.max(cur, start), end);
+      }
+      const delta = x < mid ? -10 : 10;
+      let target = Math.max(0, cur + delta);
+      if (this._isLive && this._hasLiveDVR()) {
+        const { start, end } = this._getDvrRange();
+        target = Math.min(Math.max(target, start), end);
+      }
+      this._player.seekTo(target, true);
+      try { this._player.playVideo(); } catch(_) {}
+      this._immediateUI(target);
+      blinkControls();
 		});
 		this.$overlay.addEventListener('touchend', (e) => {
 			const now = Date.now(); const dt = now - this._lastTap; this._lastTap = now;
+      if (this._isLive && !this._hasLiveDVR()) return;
 			if (dt < 300) {
 				const touch = e.changedTouches[0]; const rect = this.$overlay.getBoundingClientRect();
 				const x = touch.clientX - rect.left; const mid = rect.width / 2;
-				const cur = this._player.getCurrentTime(); const delta = x < mid ? -10 : 10;
-				const target = Math.max(0, cur + delta);
-				this._player.seekTo(target, true); this._immediateUI(target); blinkControls();
+				let cur = this._player.getCurrentTime();
+				if (this._isLive && this._hasLiveDVR()) {
+				  const { start, end } = this._getDvrRange();
+				  cur = Math.min(Math.max(cur, start), end);
+				}
+				const delta = x < mid ? -10 : 10;
+				let target = Math.max(0, cur + delta);
+				if (this._isLive && this._hasLiveDVR()) {
+				  const { start, end } = this._getDvrRange();
+				  target = Math.min(Math.max(target, start), end);
+				}
+				this._player.seekTo(target, true);
+				try { this._player.playVideo(); } catch(_) {}
+				this._immediateUI(target);
+				blinkControls();
 			}
 		});
 
@@ -420,34 +491,87 @@ class LCYouTube extends HTMLElement {
 	_updateUI() {
     if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
     this._setLiveUI(this._detectLive());
+    if (this._isLive && !this._hasLiveDVR()) {
+      if (this.$bar) this.$bar.style.width = '100%';
+      if (this.$seek) this.$seek.style.left = '100%';
+      if (this.$time) this.$time.textContent = 'EN VIVO';
+      return;
+    }
     const t = this._player.getCurrentTime() || 0;
     this._duration = this._player.getDuration() || this._duration || 0;
-    // En live, mantener barra y permitir seek. Si getDuration() es 0, usamos t como "duración" efectiva.
-    if (this._isLive && (!this._duration || this._duration === 0)) {
-      this._duration = Math.max(this._duration, t);
+    // Guardar duración previa para detección de LIVE con DVR
+    if (this._duration > 0) this._lastDuration = this._duration;
+    // Live con/sin DVR: ajustar cálculo de barra
+    let pct = 0;
+    if (this._isLive) {
+      if (this._hasLiveDVR()) {
+        const { start, end } = this._getDvrRange();
+        const span = Math.max(1, end - start);
+        const clamped = Math.min(Math.max(t, start), end);
+        pct = (clamped - start) / span;
+      } else {
+        // sin DVR: barra llena
+        pct = 1;
+      }
+    } else {
+      // VOD
+      if (!this._duration || this._duration === 0) {
+        this._duration = Math.max(this._duration, t);
+      }
+      pct = this._duration ? (t / this._duration) : 0;
     }
-		const pct = this._duration ? (t / this._duration) : 0;
-		this.$bar.style.width = (pct * 100) + '%';
-		this.$seek.style.left = (pct * 100) + '%';
-		this.$time.textContent = this._isLive ? `${this._fmt(t)} / EN VIVO` : `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+    this.$bar.style.width = (pct * 100) + '%';
+    this.$seek.style.left = (pct * 100) + '%';
+    if (this._isLive) {
+      this.$time.textContent = `${this._fmt(t)} / EN VIVO`;
+    } else {
+      this.$time.textContent = `${this._fmt(t)} / ${this._fmt(this._duration)}`;
+    }
 	}
 
 	_immediateUI(target) {
-    // En live, también actualizamos la barra; si no hay duración, usamos target o tiempo actual como referencia
-    if (this._isLive && (!this._duration || this._duration === 0)) {
-      this._duration = Math.max(this._duration, target || 0);
+    if (this._isLive && !this._hasLiveDVR()) return;
+    let pct = 0;
+    if (this._isLive && this._hasLiveDVR()) {
+      const { start, end } = this._getDvrRange();
+      const span = Math.max(1, end - start);
+      const clamped = Math.min(Math.max(target, start), end);
+      pct = (clamped - start) / span;
+    } else {
+      if (this._isLive && (!this._duration || this._duration === 0)) {
+        this._duration = Math.max(this._duration, target || 0);
+      }
+      pct = this._duration ? (target / this._duration) : 0;
     }
-		const pct = this._duration ? (target / this._duration) : 0;
-		this.$bar.style.width = (pct * 100) + '%';
-		this.$seek.style.left = (pct * 100) + '%';
-		this.$time.textContent = `${this._fmt(target)} / ${this._fmt(this._duration)}`;
-		setTimeout(() => this._updateUI(), 120);
-	}
+    this.$bar.style.width = (pct * 100) + '%';
+    this.$seek.style.left = (pct * 100) + '%';
+    if (this._isLive) {
+      this.$time.textContent = `${this._fmt(this._player?.getCurrentTime?.() || target)} / EN VIVO`;
+    } else {
+      this.$time.textContent = `${this._fmt(target)} / ${this._fmt(this._duration)}`;
+    }
+    setTimeout(() => this._updateUI(), 120);
+  }
 
 	_startTimer() { if (!this._timer) this._timer = setInterval(() => this._updateUI(), 250); }
 	_stopTimer() { clearInterval(this._timer); this._timer = null; }
 
-	_fmt(s) { s = Math.max(0, Math.floor(s || 0)); const m = String(Math.floor(s / 60)).padStart(2, '0'); const sec = String(s % 60).padStart(2, '0'); return `${m}:${sec}`; }
+	_fmt(s) {
+		s = Math.max(0, Math.floor(s || 0));
+		const sec = s % 60;
+		const totalMin = Math.floor(s / 60);
+		const min = totalMin % 60;
+		const totalH = Math.floor(totalMin / 60);
+		if (totalH === 0) {
+			return `${String(totalMin).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; // MM:SS
+		}
+		const days = Math.floor(totalH / 24);
+		const hours = totalH % 24;
+		if (days === 0) {
+			return `${totalH}:${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; // H:MM:SS
+		}
+		return `${days}d ${String(hours).padStart(2,'0')}:${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; // Dd HH:MM:SS
+	}
 
 	_teardown() {
 		try { this._stopTimer(); this._player && this._player.destroy && this._player.destroy(); } catch (_) { }
