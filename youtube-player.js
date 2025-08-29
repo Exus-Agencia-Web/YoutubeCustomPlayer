@@ -163,17 +163,35 @@ class LCYouTube extends HTMLElement {
 
 	attributeChangedCallback(name, oldV, newV) {
 		if (name === 'video' && oldV !== newV) {
-			this._video = this._parseVideoId(newV || '');
-			if (this._player && this._video) { this._player.loadVideoById(this._video); }
-			this._isLive = false;
+		  this._video = this._parseVideoId(newV || '');
+		  this._isLive = false;
+		  // Si aún no existe el player y ahora tenemos un video válido, móntalo
+		  if (!this._player) {
+		    if (this._video || this._playlist) {
+		      this._mountPlayer();
+		    }
+		    return;
+		  }
+		  // Si ya existe, carga el nuevo video
+		  if (this._video) {
+		    try { this._player.loadVideoById(this._video); } catch(_) {}
+		  }
 		}
 		if (name === 'playlist' && oldV !== newV) {
-			this._playlist = this._parseListId(newV || '');
-			if (this._player && this._playlist) {
-				const payload = { list: this._playlist, listType: 'playlist', index: this._index };
-				try { this._autoplay ? this._player.loadPlaylist(payload) : this._player.cuePlaylist(payload); } catch(_) {}
-			}
-			this._updatePlaylistNav();
+		  this._playlist = this._parseListId(newV || '');
+		  // Si aún no existe el player y ahora tenemos playlist (o video), móntalo
+		  if (!this._player) {
+		    if (this._playlist || this._video) {
+		      this._mountPlayer();
+		    }
+		    this._updatePlaylistNav();
+		    return;
+		  }
+		  if (this._player && this._playlist) {
+		    const payload = { list: this._playlist, listType: 'playlist', index: this._index };
+		    try { this._autoplay ? this._player.loadPlaylist(payload) : this._player.cuePlaylist(payload); } catch(_) {}
+		  }
+		  this._updatePlaylistNav();
 		}
 					if (name === 'index' && oldV !== newV) {
 						let idxAttr = parseInt(newV || '0', 10);
@@ -477,20 +495,27 @@ class LCYouTube extends HTMLElement {
 		const baseVars = { controls: 0, modestbranding: 1, rel: 0, disablekb: 1, fs: 0, playsinline: 1, iv_load_policy: 3, autoplay: this._autoplay ? 1 : 0 };
 		const opts = { playerVars: baseVars };
 		if (!this._playlist) {
-		  opts.videoId = this._video; // solo cuando NO es playlist
+			opts.videoId = this._video; // solo cuando NO es playlist
 		}
 		this._player = new YT.Player(this.$player, {
 			...opts,
-			events: { onReady: () => this._onReady(), onStateChange: (e) => this._onStateChange(e), onError: () => this._showError() }
+			events: {
+				onReady: (e) => this._onReady(e),
+				onStateChange: (e) => this._onStateChange(e),
+				onError: (e) => this._onError(e)
+			}
 		});
 	}
 
-	_onReady() {
-		this._player.setVolume(parseInt(this.$vol.value, 10));
-		if (this._autoplay) {
-			try { this._player.mute(); } catch(_) {}
+	_onReady(e) {
+		if (e && e.target) this._player = e.target;
+		if (this._player && typeof this._player.setVolume === 'function') {
+			this._player.setVolume(parseInt(this.$vol.value, 10));
 		}
-		this._duration = this._player.getDuration() || 0;
+		if (this._autoplay) {
+			try { if (this._player && typeof this._player.mute === 'function') this._player.mute(); } catch(_) {}
+		}
+		this._duration = (this._player && typeof this._player.getDuration === 'function') ? (this._player.getDuration() || 0) : 0;
 		// Si es playlist, carga o deja en espera según autoplay
 		if (this._playlist) {
 			try {
@@ -503,7 +528,7 @@ class LCYouTube extends HTMLElement {
 			} catch(_) {}
 		} else if (this._autoplay) {
 			// Solo videos sueltos necesitan el play explícito
-			try { this._player.playVideo(); } catch(_) {}
+			try { if (this._player && typeof this._player.playVideo === 'function') this._player.playVideo(); } catch(_) {}
 		}
 			this._updateUI();
 			this._setLiveUI(this._detectLive());
@@ -529,7 +554,7 @@ class LCYouTube extends HTMLElement {
 		this._setLiveUI(this._detectLive());
 		this._updateUI();
 		if (e.data === YT.PlayerState.CUED && this._autoplay) {
-			try { this._player.playVideo(); } catch(_) {}
+			try { if (this._player && typeof this._player.playVideo === 'function') this._player.playVideo(); } catch(_) {}
 		}
 		if (e.data === YT.PlayerState.PLAYING) {
 			this.$overlay.classList.add('playing');
