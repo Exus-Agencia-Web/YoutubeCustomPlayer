@@ -396,18 +396,30 @@ class LCYouTube extends HTMLElement {
     }
   }
 
-	_ensureAudioOnUserPlay(){
-    try{
-      if (!this._player) return;
-      const muted = this._player?.isMuted && this._player.isMuted();
-      if (muted && !this._userMuted){
-        this._player.unMute();
-        const v = this.$vol ? parseInt(this.$vol.value,10) || 100 : 100;
-        this._player.setVolume(v);
-        if (this.$volToggle) this.$volToggle.classList.remove('muted');
-      }
-    }catch(_){}
-  }
+	_ensureAudioOnUserPlay(forceUnmute = false){
+	  try{
+	    if (!this._player) return;
+	    if (forceUnmute){
+	      let v = this.$vol ? parseInt(this.$vol.value,10) : 100;
+	      if (!Number.isFinite(v) || v <= 0){
+	        v = 100;
+	        if (this.$vol) this.$vol.value = String(v);
+	      }
+	      this._player?.unMute?.();
+	      this._player?.setVolume?.(v);
+	      this._userMuted = false;
+	      if (this.$volToggle) this.$volToggle.classList.remove('muted');
+	      return;
+	    }
+	    const muted = this._player?.isMuted && this._player.isMuted();
+	    if (muted && !this._userMuted){
+	      this._player?.unMute?.();
+	      const v = this.$vol ? parseInt(this.$vol.value,10) || 100 : 100;
+	      this._player?.setVolume?.(v);
+	      if (this.$volToggle) this.$volToggle.classList.remove('muted');
+	    }
+	  }catch(_){}
+	}
 
 	_getCurrentVideoId(){
 		try {
@@ -564,21 +576,27 @@ class LCYouTube extends HTMLElement {
 
 		// Overlay: play/pause
 		this.$overlay.addEventListener('click', () => {
-			if (!this._userInteracted) { this._userInteracted = true; this._ensureAudioOnUserPlay(); }
-			else { this._ensureAudioOnUserPlay(); }
-			if (this.$soundHint) this.$soundHint.classList.add('hide');
+			this._userInteracted = true;
 			const st = this._player?.getPlayerState?.();
-			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
+			const PS = (typeof YT !== 'undefined' && YT.PlayerState) || {};
+			const playingStates = [PS.PLAYING, PS.BUFFERING].filter(val => typeof val === 'number');
+			const shouldPlay = !playingStates.includes(st);
+			this._ensureAudioOnUserPlay(shouldPlay);
+			if (this.$soundHint) this.$soundHint.classList.add('hide');
+			if (shouldPlay) { this._player?.playVideo?.(); } else { this._player?.pauseVideo?.(); }
 		});
 		this.$overlay.addEventListener('keydown', (e) => { if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); this.$overlay.click(); } });
 
 		// Botón pequeño play/pause
 		this.$playBtn.addEventListener('click', () => {
-			if (!this._userInteracted) { this._userInteracted = true; this._ensureAudioOnUserPlay(); }
-			else { this._ensureAudioOnUserPlay(); }
-			if (this.$soundHint) this.$soundHint.classList.add('hide');
+			this._userInteracted = true;
 			const st = this._player?.getPlayerState?.();
-			if (st === YT.PlayerState.PLAYING) this._player.pauseVideo(); else this._player.playVideo();
+			const PS = (typeof YT !== 'undefined' && YT.PlayerState) || {};
+			const playingStates = [PS.PLAYING, PS.BUFFERING].filter(val => typeof val === 'number');
+			const shouldPlay = !playingStates.includes(st);
+			this._ensureAudioOnUserPlay(shouldPlay);
+			if (this.$soundHint) this.$soundHint.classList.add('hide');
+			if (shouldPlay) { this._player?.playVideo?.(); } else { this._player?.pauseVideo?.(); }
 		});
 
 		// Botón IR AL VIVO: salta al borde en vivo (fin de la ventana DVR)
