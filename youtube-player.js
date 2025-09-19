@@ -60,10 +60,13 @@ class LCYouTube extends HTMLElement {
 	        iframe{border-radius:inherit}
 	        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 	        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--lc-overlay-base,rgba(0,0,0,.1));cursor:pointer;z-index:3;background-size:cover;background-position:center;background-repeat:no-repeat}
+	        .overlay-content{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
 	        .overlay.playing{ background: transparent; }
 	        .overlay.playing .play{ display: none; }
-	        .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
-	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
+	        .overlay .play{width:84px;height:84px;border-radius:50%;background:var(--lc-accent);;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #ffffffff;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
+	        .sound-hint{position:static;background:var(--lc-accent);color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
+	        .sound-hint.hide{display:none}
 	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:var(--lc-controls-bg,linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
 	        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
 	        .btn,.time,.vol,.fs{color:var(--lc-text,#fff);font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
@@ -88,8 +91,6 @@ class LCYouTube extends HTMLElement {
 	        .vol-toggle.muted{color:var(--lc-muted-color,#ff3b30)}
 	        .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--lc-live-bg,rgba(255,0,0,.85));color:var(--lc-text,#fff);font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
 	        .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
-	        .sound-hint{position:absolute;top:15px;right:15px;background:var(--lc-hint-bg,rgba(0,0,0,.65));color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
-        .sound-hint.hide{display:none}
         .error-mask{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000;color:#fff;font:600 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:7;text-align:center;padding:20px;border-radius:inherit}
         .error-mask.show{display:flex}
         @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.9)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
@@ -122,16 +123,18 @@ class LCYouTube extends HTMLElement {
           .vol-toggle{display:inline-flex;}             /* En desktop también mostramos el botón simple */
         }
       </style>
-      <div class="root">
-        <div class="yt-wrap" id="wrap">
-          <div class="overlay" id="overlay" aria-label="Reproducir/Pausar" role="button" tabindex="0">
-            <div class="play" title="Reproducir"></div>
-          </div>
-          <div id="player"></div>
-          <div class="error-mask" id="errorMask">Video no disponible</div>
-          <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
-          <div class="sound-hint hide" id="soundHint">🔊 Toca para activar sonido</div>
-          <div class="controls" id="controls">
+	      <div class="root">
+	        <div class="yt-wrap" id="wrap">
+	          <div class="overlay" id="overlay" aria-label="Reproducir/Pausar" role="button" tabindex="0">
+	            <div class="overlay-content">
+	              <div class="play" title="Reproducir"></div>
+	              <div class="sound-hint hide" id="soundHint">🔊 Toca para activar sonido</div>
+	            </div>
+	          </div>
+	          <div id="player"></div>
+	          <div class="error-mask" id="errorMask">Video no disponible</div>
+	          <div class="live-badge" id="live"><span class="dot"></span> EN VIVO</div>
+	          <div class="controls" id="controls">
             <div class="btn" id="prev" title="Anterior">⏮</div>
             <div class="btn" id="playPause" title="Reproducir/Pausar">▶︎</div>
             <div class="btn" id="next" title="Siguiente">⏭</div>
