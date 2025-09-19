@@ -1,107 +1,92 @@
 # lc-youtube-player
 
-Componente Web para reproducir videos de YouTube con controles personalizados.
+Componente Web `<lc-youtube>` para incrustar videos o playlists de YouTube con una capa de controles moderna, accesible y totalmente personalizable.
 
+## Características
+- Reproductor personalizado para videos y playlists (incluye navegación Anterior/Siguiente).
+- Detección de transmisiones en vivo con indicador y botón «Ir al vivo».
+- Controles propios: play/pause, barra de progreso, volumen, mute, doble tap para +/-10 s en móvil y botón de fullscreen.
+- Pantalla completa más natural: doble clic activa/desactiva fullscreen y la tecla `Escape` lo cierra.
+- Overlay inteligente: muestra la miniatura de YouTube cuando el video está en pausa o finalizado, con sombra configurable.
+- Paleta de hasta cinco colores configurables mediante atributos, con valores predeterminados elegantes.
+- Responsive, pensado para escritorio, móviles y embebidos en sitios o apps.
 
-# lc-youtube-player
-
-Componente Web para reproducir videos y playlists de YouTube con controles personalizados y experiencia moderna.
-
-## Características principales
-- Reproductor embebido de YouTube como Web Component (`<lc-youtube>`)
-- Soporte para videos individuales y playlists
-- Controles personalizados: play/pause, barra de progreso, volumen, pantalla completa
-- Botones "Anterior" y "Siguiente" para playlists
-- Detección automática de transmisiones en vivo ("EN VIVO")
-- Navegación por playlist con desactivación automática de botones en extremos
-- Atributo `index` natural: `index="1"` es el primer video, `index="2"` el segundo, etc. `index="-1"` inicia en el último video
-- Integración fácil vía CDN (jsDelivr/unpkg) o instalación local
-- Responsive y compatible con dispositivos móviles
-
-## Uso rápido desde CDN
-
-Incluye el script minificado en tu HTML:
+## Instalación rápida (CDN)
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/lc-youtube-player@latest/youtube-player.min.js"></script>
 ```
-O:
+
+Alternativa:
+
 ```html
 <script src="https://unpkg.com/lc-youtube-player@latest/youtube-player.min.js"></script>
 ```
 
-## Ejemplo básico
+Una vez cargado el script puedes usar `<lc-youtube>` en tu HTML sin inicialización extra.
 
+## Ejemplos
+
+### Video individual
 ```html
 <lc-youtube video="C4O7djfJZ9Q"></lc-youtube>
 ```
 
-## Ejemplo con playlist y navegación
-
+### Playlist con inicio en un elemento concreto
 ```html
 <lc-youtube playlist="PL1234567890abcdef" index="2"></lc-youtube>
 ```
-- `playlist`: ID de la playlist de YouTube (puedes usar la URL completa, el componente extrae el ID)
-- `index`: número natural (1=primer video, 2=segundo, -1=último video)
 
-## Atributos disponibles
-- `video`: ID del video de YouTube (para videos individuales)
-- `playlist`: ID o URL de la playlist
-- `index`: posición inicial (1=primero, 2=segundo, -1=último)
-- `autoplay`: inicia la reproducción automáticamente (opcional)
+### Reproductor con autoplay y colores personalizados
+```html
+<lc-youtube
+  video="C4O7djfJZ9Q"
+  autoplay
+  color-surface="#101820"
+  color-text="#f6f7f9"
+  color-accent="#ff3737"
+  color-subtle="rgba(255,255,255,0.15)"
+  color-overlay="rgba(0,0,0,0.45)"
+></lc-youtube>
+```
+
+## Atributos soportados
+
+| Atributo | Descripción |
+|----------|-------------|
+| `video` | ID o URL de YouTube para un video individual. |
+| `playlist` | ID o URL de una playlist. |
+| `index` | Posición inicial dentro de la playlist (1 = primero, 2 = segundo, `-1` = último). |
+| `autoplay` | Si está presente, intenta iniciar la reproducción automáticamente. |
+| `dvr-window` | Ventana (en segundos) para transmisiones en vivo con DVR. Predeterminado 4 horas. |
+| `color-surface` | Color de fondo principal del contenedor. |
+| `color-text` | Color base para textos e iconos. |
+| `color-accent` | Color de acento para progreso, badge «EN VIVO», estados mute, etc. |
+| `color-subtle` | Color base para botones, sliders y gradientes de controles. |
+| `color-overlay` | Color usado para el overlay cuando el video está pausado (también aplica como sombra sobre la miniatura). |
+
+Todos los atributos de color son opcionales; si no se especifican se usan los valores predeterminados del componente.
+
+## Comportamiento de la UI
+- **Pantalla completa:** doble clic sobre el overlay alterna fullscreen. `Escape` fuerza la salida. En móvil se mantiene soporte para doble tap ±10 s.
+- **Overlay:** al pausar/finalizar el video se muestra la miniatura oficial de YouTube con el color `color-overlay` superpuesto al 35 %. Mientras reproduce, el overlay es transparente.
+- **Autohide:** los controles aparecen con movimiento/touch y se ocultan automáticamente tras unos segundos.
 
 ## Instalación local (npm)
 
-```sh
+```bash
 npm install lc-youtube-player
 ```
-Luego incluye el script en tu proyecto:
+
+Incluye el fichero minificado en tu build:
+
 ```html
 <script src="./node_modules/lc-youtube-player/youtube-player.min.js"></script>
 ```
 
-## Personalización y eventos
-Puedes usar el componente en cualquier parte de tu HTML. Los controles y la experiencia están listos para usarse, no necesitas inicializar nada extra.
+## Publicación continua
 
-## Publicación automática en npm
-Este repositorio incluye un workflow de GitHub Actions que:
-- Minifica el archivo `youtube-player.js` usando Terser
-- Publica el paquete en npm con el archivo `youtube-player.min.js`
-
-Para publicar automáticamente:
-1. Agrega el secreto `NPM_TOKEN` en la configuración de GitHub
-2. Haz push a la rama `main`
-
-## Ejemplo completo de integración
-
-```html
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <title>Demo lc-youtube-player</title>
-  <script src="https://cdn.jsdelivr.net/npm/lc-youtube-player@1.0.0/youtube-player.min.js"></script>
-</head>
-<body>
-  <h3>Demo: &lt;lc-youtube playlist="PL1234567890abcdef" index="-1"&gt;</h3>
-  <lc-youtube playlist="PL1234567890abcdef" index="-1"></lc-youtube>
-</body>
-</html>
-```
-
-## Autor
-Exus Agencia Web
-
-## Licencia
-MIT
-1. Agrega el secreto `NPM_TOKEN` en la configuración de GitHub.
+El repositorio incluye un workflow de GitHub Actions que minifica `youtube-player.js` y publica automáticamente en npm. Para activarlo:
+1. Configura el secreto `NPM_TOKEN` en GitHub.
 2. Haz push a la rama `main`.
-
-## Personalización
-
-Puedes usar el componente `<lc-youtube>` en tu HTML y pasarle los atributos `video`, `playlist`, `index` y `autoplay` para controlar la reproducción de videos o listas de reproducción de YouTube:
-
-```html
-<lc-youtube video="C4O7djfJZ9Q" autoplay="1"></lc-youtube>
-```
 

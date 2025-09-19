@@ -8,7 +8,12 @@ window.__ytApiReadyPromise = new Promise((resolve) => {
 });
 
 class LCYouTube extends HTMLElement {
-	static get observedAttributes() { return ['video','playlist','index','autoplay','dvr-window']; }
+	static get observedAttributes() {
+		return [
+			'video','playlist','index','autoplay','dvr-window',
+			'color-surface','color-text','color-accent','color-subtle','color-overlay'
+		];
+	}
 
 	constructor() {
 		super();
@@ -29,45 +34,61 @@ class LCYouTube extends HTMLElement {
 		this._dvrTicks = 0;
 		this._userMuted = false; // rastrea si el usuario decidió silenciar
 		this._handleKeydown = null;
+		this._defaultColors = {
+			surface: '#000',
+			text: '#fff',
+			accent: '#427ddbff',
+			subtle: 'rgba(255,255,255,.12)',
+			overlay: 'rgba(0,0,0,.1)'
+		};
+		this._colors = { ...this._defaultColors };
+		this._colorAttrMap = {
+			'color-surface': 'surface',
+			'color-text': 'text',
+			'color-accent': 'accent',
+			'color-subtle': 'subtle',
+			'color-overlay': 'overlay'
+		};
+		this._isConnected = false;
 		this.attachShadow({ mode: 'open' });
 		this.shadowRoot.innerHTML = `
-      <style>
-        .vol-toggle{display:inline-flex}
-        :host{display:block}
-        .yt-wrap{position:relative;max-width:1920px;margin:auto;background:#000;aspect-ratio:16/9;border-radius:5px}
-        .overlay,.controls,#player,.live-badge{border-radius:inherit}
-        iframe{border-radius:inherit}
-        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.1);cursor:pointer;z-index:3;background-size:cover;background-position:center;background-repeat:no-repeat}
-        .overlay.playing{ background: transparent; }
-        .overlay.playing .play{ display: none; }
-        .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
-        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
-        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
-        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
-        .btn,.time,.vol,.fs{color:#fff;font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
-        .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.12);cursor:pointer}
-        .btn:hover{background:rgba(255,255,255,.2)}
-        .btn-live{background:rgba(255,0,0,.85); font-weight:600}
-        .btn-live:hover{background:rgba(255,0,0,.95)}
-        .btn-live .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
-        #goLive{display:none}
-        .progress{position:relative;flex:1;height:6px;background:rgba(255,255,255,.25);border-radius:999px;cursor:pointer}
-        .progress.disabled{opacity:.5; cursor:not-allowed}
-        .progress.disabled .seek{display:none}
-        .progress .bar{position:absolute;left:0;top:0;height:100%;width:0;background:#fff;border-radius:999px}
-        .progress .seek{position:absolute;left:0;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#fff}
-        .time{min-width:110px;text-align:center;opacity:.9}
-        .vol{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
-        .vol input{accent-color:#fff}
-        .fs{cursor:pointer;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:10px}
-        .vol-toggle{position:relative;align-items:center;justify-content:center;color:#fff}
-        .vol-toggle svg{width:20px;height:20px;display:block}
-        .vol-toggle svg path{fill:currentColor !important} /* fuerza a usar currentColor */
-        .vol-toggle.muted{color:#ff3b30}
-        .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,0,0,.85);color:#fff;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
-        .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
-        .sound-hint{position:absolute;top:15px;right:15px;background:rgba(0,0,0,.65);color:#fff;padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
+	      <style>
+	        .vol-toggle{display:inline-flex}
+	        :host{display:block}
+	        .yt-wrap{position:relative;max-width:1920px;margin:auto;background:var(--lc-bg,#000);aspect-ratio:16/9;border-radius:5px}
+	        .overlay,.controls,#player,.live-badge{border-radius:inherit}
+	        iframe{border-radius:inherit}
+	        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+	        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--lc-overlay-base,rgba(0,0,0,.1));cursor:pointer;z-index:3;background-size:cover;background-position:center;background-repeat:no-repeat}
+	        .overlay.playing{ background: transparent; }
+	        .overlay.playing .play{ display: none; }
+	        .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
+	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:var(--lc-controls-bg,linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
+	        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
+	        .btn,.time,.vol,.fs{color:var(--lc-text,#fff);font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
+	        .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:var(--lc-btn-bg,rgba(255,255,255,.12));cursor:pointer}
+	        .btn:hover{background:var(--lc-btn-bg-hover,rgba(255,255,255,.2))}
+	        .btn-live{background:var(--lc-live-bg,rgba(255,0,0,.85)); font-weight:600}
+	        .btn-live:hover{background:var(--lc-live-bg-hover,rgba(255,0,0,.95))}
+	        .btn-live .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
+	        #goLive{display:none}
+	        .progress{position:relative;flex:1;height:6px;background:var(--lc-progress-bg,rgba(255,255,255,.25));border-radius:999px;cursor:pointer}
+	        .progress.disabled{opacity:.5; cursor:not-allowed}
+	        .progress.disabled .seek{display:none}
+	        .progress .bar{position:absolute;left:0;top:0;height:100%;width:0;background:var(--lc-progress-fill,#fff);border-radius:999px}
+	        .progress .seek{position:absolute;left:0;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--lc-progress-fill,#fff)}
+	        .time{min-width:110px;text-align:center;opacity:.9}
+	        .vol{display:flex;align-items:center;gap:6px;background:var(--lc-btn-bg,rgba(255,255,255,.12));padding:6px 10px;border-radius:10px}
+        .vol input{accent-color:var(--lc-accent,#fff)}
+	        .fs{cursor:pointer;background:var(--lc-btn-bg,rgba(255,255,255,.12));padding:6px 10px;border-radius:10px}
+	        .vol-toggle{position:relative;align-items:center;justify-content:center;color:var(--lc-text,#fff)}
+	        .vol-toggle svg{width:20px;height:20px;display:block}
+	        .vol-toggle svg path{fill:currentColor !important} /* fuerza a usar currentColor */
+	        .vol-toggle.muted{color:var(--lc-muted-color,#ff3b30)}
+	        .live-badge{position:absolute;top:10px;left:10px;display:none;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--lc-live-bg,rgba(255,0,0,.85));color:var(--lc-text,#fff);font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:.3px;z-index:5;pointer-events:none}
+	        .live-badge .dot{width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,0.9);animation: pulse 1.2s ease-out infinite}
+	        .sound-hint{position:absolute;top:15px;right:15px;background:var(--lc-hint-bg,rgba(0,0,0,.65));color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
         .sound-hint.hide{display:none}
         .error-mask{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000;color:#fff;font:600 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:7;text-align:center;padding:20px;border-radius:inherit}
         .error-mask.show{display:flex}
@@ -198,13 +219,21 @@ class LCYouTube extends HTMLElement {
 		const dvrAttr = parseInt(this.getAttribute('dvr-window') || '', 10);
 		if (!Number.isNaN(dvrAttr) && dvrAttr > 60) this._dvrWindow = dvrAttr;
 		this._cacheEls();
+		this._syncColorAttributes();
+		this._isConnected = true;
+		this._applyColorVars();
 		this._bindUI();
 		this._mountPlayer();
 	}
 
-	disconnectedCallback() { this._teardown(); }
+	disconnectedCallback() { this._isConnected = false; this._teardown(); }
 
 	attributeChangedCallback(name, oldV, newV) {
+		if (this._colorAttrMap && name in this._colorAttrMap) {
+			if (oldV === newV) return;
+			this._updateColorAttribute(name, newV);
+			return;
+		}
 		if (name === 'video' && oldV !== newV) {
 		  this._video = this._parseVideoId(newV || '');
 		  this._isLive = false;
@@ -395,20 +424,77 @@ class LCYouTube extends HTMLElement {
 
 	_setOverlayThumbnail(enabled){
 		if (!this.$overlay) return;
+		const overlay = this._colors?.overlay || this._defaultColors.overlay;
 		if (!enabled) {
 			this.$overlay.style.backgroundImage = '';
-			this.$overlay.style.backgroundColor = 'rgba(0,0,0,.1)';
+			this.$overlay.style.backgroundColor = '';
 			return;
 		}
 		const vid = this._getCurrentVideoId();
 		if (!vid) {
 			this.$overlay.style.backgroundImage = '';
-			this.$overlay.style.backgroundColor = 'rgba(0,0,0,.1)';
+			this.$overlay.style.backgroundColor = overlay;
 			return;
 		}
 		const url = this._buildThumbnailUrl(vid);
-		this.$overlay.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('${url}')`;
+		this.$overlay.style.backgroundImage = `linear-gradient(${overlay}, ${overlay}), url('${url}')`;
 		this.$overlay.style.backgroundColor = '';
+	}
+
+	_applyColorVars(){
+		if (!this.$wrap) return;
+		const surface = this._colors.surface || this._defaultColors.surface;
+		const text = this._colors.text || this._defaultColors.text;
+		const accent = this._colors.accent || this._defaultColors.accent;
+		const subtle = this._colors.subtle || this._defaultColors.subtle;
+		const overlay = this._colors.overlay || this._defaultColors.overlay;
+		const controlsBg = /gradient/i.test(subtle) ? subtle : `linear-gradient(to top, ${subtle}, transparent)`;
+		const vars = {
+			'--lc-bg': surface,
+			'--lc-overlay-base': overlay,
+			'--lc-controls-bg': controlsBg,
+			'--lc-btn-bg': subtle,
+			'--lc-btn-bg-hover': subtle,
+			'--lc-text': text,
+			'--lc-progress-bg': subtle,
+			'--lc-progress-fill': accent,
+			'--lc-live-bg': accent,
+			'--lc-live-bg-hover': accent,
+			'--lc-muted-color': accent,
+			'--lc-hint-bg': overlay,
+			'--lc-accent': accent
+		};
+		try {
+			Object.entries(vars).forEach(([key, val]) => {
+				if (val != null && val !== '') this.$wrap.style.setProperty(key, val);
+				else this.$wrap.style.removeProperty(key);
+			});
+			if (this.$overlay) {
+				const showThumb = !this.$overlay.classList.contains('playing');
+				this._setOverlayThumbnail(showThumb);
+			}
+		} catch(_) {}
+	}
+
+	_syncColorAttributes(){
+		if (!this._colorAttrMap) return;
+		Object.entries(this._colorAttrMap).forEach(([attr, key]) => {
+			const v = this.getAttribute(attr);
+			if (v != null && String(v).trim() !== '') {
+				this._colors[key] = String(v).trim();
+			} else {
+				this._colors[key] = this._defaultColors[key];
+			}
+		});
+	}
+
+	_updateColorAttribute(attr, newV){
+		if (!this._colorAttrMap) return;
+		const key = this._colorAttrMap[attr];
+		if (!key) return;
+		const val = (newV == null) ? '' : String(newV).trim();
+		this._colors[key] = val ? val : this._defaultColors[key];
+		if (this._isConnected) this._applyColorVars();
 	}
 
 	_getFullscreenElement(){
