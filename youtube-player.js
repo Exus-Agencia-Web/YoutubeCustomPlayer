@@ -38,7 +38,7 @@ class LCYouTube extends HTMLElement {
         .overlay,.controls,#player,.live-badge{border-radius:inherit}
         iframe{border-radius:inherit}
         iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.95);cursor:pointer;z-index:3}
+        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.1);cursor:pointer;z-index:3;background-size:cover;background-position:center;background-repeat:no-repeat}
         .overlay.playing{ background: transparent; }
         .overlay.playing .play{ display: none; }
         .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
@@ -367,7 +367,7 @@ class LCYouTube extends HTMLElement {
     }
   }
 
-  _ensureAudioOnUserPlay(){
+	_ensureAudioOnUserPlay(){
     try{
       if (!this._player) return;
       const muted = this._player?.isMuted && this._player.isMuted();
@@ -379,6 +379,37 @@ class LCYouTube extends HTMLElement {
       }
     }catch(_){}
   }
+
+	_getCurrentVideoId(){
+		try {
+			const data = this._player?.getVideoData ? this._player.getVideoData() : null;
+			if (data && data.video_id) return data.video_id;
+		} catch (_) {}
+		return this._video;
+	}
+
+	_buildThumbnailUrl(id){
+		if (!id) return '';
+		return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+	}
+
+	_setOverlayThumbnail(enabled){
+		if (!this.$overlay) return;
+		if (!enabled) {
+			this.$overlay.style.backgroundImage = '';
+			this.$overlay.style.backgroundColor = 'rgba(0,0,0,.1)';
+			return;
+		}
+		const vid = this._getCurrentVideoId();
+		if (!vid) {
+			this.$overlay.style.backgroundImage = '';
+			this.$overlay.style.backgroundColor = 'rgba(0,0,0,.1)';
+			return;
+		}
+		const url = this._buildThumbnailUrl(vid);
+		this.$overlay.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('${url}')`;
+		this.$overlay.style.backgroundColor = '';
+	}
 
 	_getFullscreenElement(){
 		if (typeof document === 'undefined') return null;
@@ -650,6 +681,7 @@ class LCYouTube extends HTMLElement {
 		}
 			this._updateUI();
 			this._setLiveUI(this._detectLive());
+			this._setOverlayThumbnail(true);
 				if (this._startAtLast && this._playlist && typeof this._player.getPlaylist === 'function') {
 					const tryJumpToLast = () => {
 						const list = this._player.getPlaylist();
@@ -676,16 +708,19 @@ class LCYouTube extends HTMLElement {
 		}
 		if (e.data === YT.PlayerState.PLAYING) {
 			this.$overlay.classList.add('playing');
+			this._setOverlayThumbnail(false);
 			this._startTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '❚❚';
 		} else if (e.data === YT.PlayerState.PAUSED) {
 			this.$overlay.classList.remove('playing');
+			this._setOverlayThumbnail(true);
 			this._stopTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '▶︎';
 		} else if (e.data === YT.PlayerState.ENDED) {
 			this.$overlay.classList.remove('playing');
+			this._setOverlayThumbnail(true);
 			this._stopTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '▶︎';
