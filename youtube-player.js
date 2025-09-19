@@ -35,6 +35,11 @@ class LCYouTube extends HTMLElement {
 		this._userMuted = false; // rastrea si el usuario decidió silenciar
 		this._pendingPlayIntent = null; // 'play' | 'pause'
 		this._pendingForceUnmute = false;
+		this._isSeeking = false;
+		this._seekPointerId = null;
+		this._seekPreview = null;
+		this._awaitingLiveEdge = false;
+		this._ignoreSeekClick = false;
 		this._handleKeydown = null;
 		this._defaultColors = {
 			surface: '#000',
@@ -65,9 +70,9 @@ class LCYouTube extends HTMLElement {
 	        .overlay-content{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
 	        .overlay.playing{ background: transparent; }
 	        .overlay.playing .play{ display: none; }
-	        .overlay .play{width:84px;height:84px;border-radius:50%;background:var(--lc-accent);;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
-	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #ffffffff;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
-	        .sound-hint{position:static;background:var(--lc-accent);color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
+	        .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
+	        .sound-hint{position:static;background:var(--lc-hint-bg,rgba(0,0,0,.65));color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
 	        .sound-hint.hide{display:none}
 	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:var(--lc-controls-bg,linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
 	        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
@@ -338,9 +343,9 @@ class LCYouTube extends HTMLElement {
 
 	    // 1) Señal primaria y estable expuesta por la IFrame API
 	    const data = this._player?.getVideoData?.() || {};
-	    if (typeof data.isLiveContent === 'boolean') {
-	      return data.isLiveContent;
-	    }
+	    if (typeof data.isLiveNow === 'boolean') return data.isLiveNow;
+	    if (typeof data.isLive === 'boolean') return data.isLive;
+	    if (typeof data.isLiveContent === 'boolean') return data.isLiveContent;
 
 	    // 2) Fallbacks: estado activo + duración característica
 	    const st = this._player?.getPlayerState?.();
@@ -388,10 +393,15 @@ class LCYouTube extends HTMLElement {
 		return { start, end };
 	}
 
-  _setLiveUI(isLive){
+	  _setLiveUI(isLive){
     const prevLive = !!this._isLive;
     const nextLive = !!isLive;
     this._isLive = nextLive;
+    if (nextLive && !prevLive) {
+      this._awaitingLiveEdge = true;
+    } else if (!nextLive) {
+      this._awaitingLiveEdge = false;
+    }
     if (this.$wrap) { if (nextLive) this.$wrap.classList.add('live'); else this.$wrap.classList.remove('live'); }
     if (this.$live && prevLive !== nextLive) this.$live.style.display = nextLive ? 'inline-flex' : 'none';
     if (this.$progress) {
@@ -459,6 +469,106 @@ class LCYouTube extends HTMLElement {
 	    try { this._player.pauseVideo(); } catch(_) {}
 	  }
 	  this._pendingPlayIntent = null;
+	}
+
+	_eventToProgressFraction(clientX){
+	  if (!this.$progress || typeof clientX !== 'number') return null;
+	  const rect = this.$progress.getBoundingClientRect();
+	  if (!rect || rect.width <= 0) return null;
+	  const pct = (clientX - rect.left) / rect.width;
+	  if (!Number.isFinite(pct)) return null;
+	  return Math.min(1, Math.max(0, pct));
+	}
+
+	_computeSeekTargetFromFraction(pct){
+	  if (!Number.isFinite(pct)) return null;
+	  const clamped = Math.min(1, Math.max(0, pct));
+	  if (this._isLive && this._hasLiveDVR()) {
+	    const { start, end } = this._getDvrRange();
+	    const span = Math.max(0, end - start);
+	    const target = span > 0 ? (start + clamped * span) : end;
+	    return { target, start, end, span, live: true };
+	  }
+	  let base = Number(this._player?.getDuration?.() || 0);
+	  if (!base || base <= 0) base = Number(this._duration || 0);
+	  if (!base || base <= 0) base = Number(this._player?.getCurrentTime?.() || 0);
+	  if (!base || base <= 0) return null;
+	  const span = Math.max(base, 0);
+	  const target = clamped * span;
+	  return { target, start: 0, end: span, span, live: false };
+	}
+
+	_previewSeekFraction(pct){
+	  const data = this._computeSeekTargetFromFraction(pct);
+	  if (!data) return null;
+	  this._seekPreview = data.target;
+	  this._immediateUI(data.target);
+	  return data;
+	}
+
+	_commitSeekFraction(pct, { autoPlay = true } = {}){
+	  const data = this._computeSeekTargetFromFraction(pct);
+	  if (!data || !this._player) return;
+	  this._seekPreview = null;
+	  try { this._player.seekTo(data.target, true); } catch(_) {}
+	  this._userInteracted = true;
+	  if (autoPlay) this._ensureAudioOnUserPlay();
+	  if (autoPlay) {
+	    try { this._player.playVideo(); } catch(_) {}
+	  }
+	  this._immediateUI(data.target);
+	}
+
+	_seekToLiveEdge(forceUnmute = false, { autoPlay = true } = {}){
+	  if (!this._player || !this._isLive) return false;
+	  const effectiveForce = forceUnmute || this._pendingForceUnmute;
+	  const hasDVR = this._hasLiveDVR();
+	  if (!hasDVR) {
+	    if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true);
+	    else if (autoPlay) this._ensureAudioOnUserPlay();
+	    if (autoPlay) {
+	      try { this._player.playVideo(); } catch(_) {}
+	    }
+	    this._awaitingLiveEdge = false;
+	    if (effectiveForce) this._pendingForceUnmute = false;
+	    return true;
+	  }
+	  const { start, end } = this._getDvrRange();
+	  if (!(end > 0 && end >= start)) {
+	    this._awaitingLiveEdge = true;
+	    if (effectiveForce && autoPlay) this._pendingForceUnmute = true;
+	    return false;
+	  }
+	  const span = Math.max(0, end - start);
+	  const offset = Math.max(0.5, Math.min(2, span * 0.01 || 0.75));
+	  const target = Math.max(start, end - offset);
+	  try { this._player.seekTo(target, true); } catch(_) {}
+	  if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true);
+	  else if (autoPlay) this._ensureAudioOnUserPlay();
+	  if (autoPlay) {
+	    try { this._player.playVideo(); } catch(_) {}
+	  }
+	  this._immediateUI(target);
+	  this._awaitingLiveEdge = false;
+	  if (effectiveForce) this._pendingForceUnmute = false;
+	  return true;
+	}
+
+	_maybeAutoLiveEdge(){
+	  if (!this._awaitingLiveEdge) return;
+	  if (!this._isLive) { this._awaitingLiveEdge = false; return; }
+	  const hasDVR = this._hasLiveDVR();
+	  if (!hasDVR) { this._awaitingLiveEdge = false; return; }
+	  const { end, start } = this._getDvrRange();
+	  if (end > 0 && end >= start) {
+	    let autoPlay = !!this._autoplay;
+	    try {
+	      const st = this._player?.getPlayerState?.();
+	      const PS = (typeof YT !== 'undefined' && YT.PlayerState) || {};
+	      if (st === PS.PLAYING || st === PS.BUFFERING) autoPlay = true;
+	    } catch(_) {}
+	    this._seekToLiveEdge(false, { autoPlay });
+	  }
 	}
 
 	_getCurrentVideoId(){
@@ -635,45 +745,101 @@ class LCYouTube extends HTMLElement {
 		if (this.$goLive) {
 		  this.$goLive.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this._ensureAudioOnUserPlay();
-			try {
-			  if (this._isLive && this._hasLiveDVR()) {
-				const { end } = this._getDvrRange();
-				const target = Math.max(0, end - 0.5); // pequeño offset para asegurar reproducción
-				this._player.seekTo(target, true);
-				this._player.playVideo();
-				this._immediateUI(target);
-			  }
-			} catch(_) {}
+			this._userInteracted = true;
+			const success = this._seekToLiveEdge(true);
+			if (!success) this._awaitingLiveEdge = true;
 		  });
 		}
 
-		// Seek con click
+		const seekDisabled = () => (this._isLive && !this._hasLiveDVR()) || this.$progress.classList.contains('disabled');
+		const commitSeekFromEvent = (clientX) => {
+		  if (seekDisabled()) return;
+		  const pct = this._eventToProgressFraction(clientX);
+		  if (pct == null) return;
+		  this._commitSeekFraction(pct);
+		};
+		const previewSeekFromEvent = (clientX) => {
+		  if (seekDisabled()) return;
+		  const pct = this._eventToProgressFraction(clientX);
+		  if (pct == null) return;
+		  this._previewSeekFraction(pct);
+		};
+		// Seek con click/tap simple
 		this.$progress.addEventListener('click', (e) => {
-      if ((this._isLive && !this._hasLiveDVR()) || this.$progress.classList.contains('disabled')) return;
-      const rect = this.$progress.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = Math.min(1, Math.max(0, x / rect.width));
-      if (this._isLive && this._hasLiveDVR()) {
-        const { start, end } = this._getDvrRange();
-        const target = start + pct * (end - start);
-        // Marcar interacción para que se considere "retrasado" si corresponde
-        try { this._userInteracted = true; } catch(_) {}
-        this._player.seekTo(target, true);
-        this._ensureAudioOnUserPlay();
-        try { this._player.playVideo(); } catch(_) {}
-        this._immediateUI(target);
-      } else {
-        const effDur = (this._duration && this._duration > 0) ? this._duration : (this._player?.getCurrentTime?.() || 0);
-        if (effDur > 0) {
-          const target = effDur * pct;
-          this._player.seekTo(target, true);
-          this._ensureAudioOnUserPlay();
-          try { this._player.playVideo(); } catch(_) {}
-          this._immediateUI(target);
-        }
-      }
+		  if (this._ignoreSeekClick) {
+		    this._ignoreSeekClick = false;
+		    return;
+		  }
+		  commitSeekFromEvent(e.clientX);
 		});
+		const supportsPointer = typeof window !== 'undefined' && window.PointerEvent;
+		if (supportsPointer) {
+		  this.$progress.addEventListener('pointerdown', (e) => {
+		    if (e.pointerType === 'mouse' && e.button !== 0) return;
+		    if (seekDisabled()) return;
+		    this._ignoreSeekClick = true;
+		    this._isSeeking = true;
+		    this._seekPointerId = e.pointerId;
+		    try { this.$progress.setPointerCapture?.(e.pointerId); } catch(_) {}
+		    previewSeekFromEvent(e.clientX);
+		    e.preventDefault();
+		  });
+		  this.$progress.addEventListener('pointermove', (e) => {
+		    if (!this._isSeeking || (this._seekPointerId !== null && e.pointerId !== this._seekPointerId)) return;
+		    previewSeekFromEvent(e.clientX);
+		    e.preventDefault();
+		  });
+		  const stopPointerSeek = (e) => {
+		    if (!this._isSeeking || (this._seekPointerId !== null && e.pointerId !== this._seekPointerId)) return;
+		    commitSeekFromEvent(e.clientX);
+		    this._isSeeking = false;
+		    this._seekPointerId = null;
+		    try { this.$progress.releasePointerCapture?.(e.pointerId); } catch(_) {}
+		    setTimeout(() => { this._ignoreSeekClick = false; }, 0);
+		    e.preventDefault();
+		  };
+		  this.$progress.addEventListener('pointerup', stopPointerSeek);
+		  this.$progress.addEventListener('pointercancel', (e) => {
+		    if (!this._isSeeking || (this._seekPointerId !== null && e.pointerId !== this._seekPointerId)) return;
+		    this._isSeeking = false;
+		    this._seekPointerId = null;
+		    this._seekPreview = null;
+		    try { this.$progress.releasePointerCapture?.(e.pointerId); } catch(_) {}
+		    this._updateUI();
+		    this._ignoreSeekClick = false;
+		  });
+		} else {
+		  // Fallback para navegadores sin Pointer Events
+		  const touchMove = (clientX, commit = false) => {
+		    if (seekDisabled()) return;
+		    if (commit) commitSeekFromEvent(clientX); else previewSeekFromEvent(clientX);
+		  };
+		  this.$progress.addEventListener('touchstart', (e) => {
+		    if (!e.changedTouches || e.changedTouches.length === 0) return;
+		    this._isSeeking = true;
+		    this._ignoreSeekClick = true;
+		    touchMove(e.changedTouches[0].clientX, false);
+		  }, { passive: false });
+		  this.$progress.addEventListener('touchmove', (e) => {
+		    if (!this._isSeeking || !e.changedTouches || e.changedTouches.length === 0) return;
+		    touchMove(e.changedTouches[0].clientX, false);
+		    e.preventDefault();
+		  }, { passive: false });
+		  const touchEndHandler = (e) => {
+		    if (!this._isSeeking || !e.changedTouches || e.changedTouches.length === 0) return;
+		    touchMove(e.changedTouches[0].clientX, true);
+		    this._isSeeking = false;
+		    this._seekPreview = null;
+		    setTimeout(() => { this._ignoreSeekClick = false; }, 0);
+		  };
+		  this.$progress.addEventListener('touchend', touchEndHandler);
+		  this.$progress.addEventListener('touchcancel', () => {
+		    this._isSeeking = false;
+		    this._seekPreview = null;
+		    this._updateUI();
+		    this._ignoreSeekClick = false;
+		  });
+		}
 
 		// Doble click: alternar fullscreen
 		this.$overlay.addEventListener('dblclick', (e) => {
@@ -831,6 +997,10 @@ class LCYouTube extends HTMLElement {
 			this._updateUI();
 			this._setLiveUI(this._detectLive());
 			this._setOverlayThumbnail(true);
+			if (this._isLive) {
+			  const autoPlay = !!this._autoplay;
+			  this._seekToLiveEdge(false, { autoPlay });
+			}
 				if (this._startAtLast && this._playlist && typeof this._player.getPlaylist === 'function') {
 					const tryJumpToLast = () => {
 						const list = this._player.getPlaylist();
@@ -879,6 +1049,8 @@ class LCYouTube extends HTMLElement {
 
 	_updateUI() {
 		if (!this._player || typeof this._player.getCurrentTime !== 'function') return;
+		this._maybeAutoLiveEdge();
+		if (this._isSeeking && this._seekPreview !== null) return;
 		// Forzar la detección de LIVE en cada ciclo
 		const isLiveNow = this._detectLive();
     const compactTime = (typeof window !== 'undefined' && window.matchMedia) ?
