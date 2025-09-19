@@ -28,6 +28,7 @@ class LCYouTube extends HTMLElement {
 		this._dvrStable = false;
 		this._dvrTicks = 0;
 		this._userMuted = false; // rastrea si el usuario decidió silenciar
+		this._handleKeydown = null;
 		this.attachShadow({ mode: 'open' });
 		this.shadowRoot.innerHTML = `
       <style>
@@ -37,7 +38,7 @@ class LCYouTube extends HTMLElement {
         .overlay,.controls,#player,.live-badge{border-radius:inherit}
         iframe{border-radius:inherit}
         iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,.65));cursor:pointer;z-index:3}
+        .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.95);cursor:pointer;z-index:3}
         .overlay.playing{ background: transparent; }
         .overlay.playing .play{ display: none; }
         .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
@@ -379,6 +380,40 @@ class LCYouTube extends HTMLElement {
     }catch(_){}
   }
 
+	_getFullscreenElement(){
+		if (typeof document === 'undefined') return null;
+		return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || null;
+	}
+
+	_requestFullscreen(el){
+		if (!el) return;
+		const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
+		if (req) {
+			try { req.call(el); } catch(_) {}
+		}
+	}
+
+	_exitFullscreen(){
+		if (typeof document === 'undefined') return;
+		const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen || document.mozCancelFullScreen;
+		if (exit) {
+			try { exit.call(document); } catch(_) {}
+		}
+	}
+
+	_toggleFullscreen(force){
+		const isFs = !!this._getFullscreenElement();
+		if (force === true) {
+			if (!isFs) this._requestFullscreen(this.$wrap);
+			return;
+		}
+		if (force === false) {
+			if (isFs) this._exitFullscreen();
+			return;
+		}
+		if (isFs) this._exitFullscreen(); else this._requestFullscreen(this.$wrap);
+	}
+
 	_bindUI() {
 		// Auto-hide de controles
 		this._controlsTimer = null;
@@ -473,30 +508,11 @@ class LCYouTube extends HTMLElement {
       }
 		});
 
-		// Doble click/tap: ±10s
+		// Doble click: alternar fullscreen
 		this.$overlay.addEventListener('dblclick', (e) => {
-      if (this._isLive && !this._hasLiveDVR()) return;
-      const rect = this.$overlay.getBoundingClientRect();
-      const x = e.clientX - rect.left; const mid = rect.width / 2;
-      let cur = this._player.getCurrentTime();
-      if (this._isLive && this._hasLiveDVR()) {
-        const { start, end } = this._getDvrRange();
-        // clamp current dentro del rango
-        cur = Math.min(Math.max(cur, start), end);
-      }
-      const delta = x < mid ? -10 : 10;
-      let target = Math.max(0, cur + delta);
-      if (this._isLive && this._hasLiveDVR()) {
-        const { start, end } = this._getDvrRange();
-        target = Math.min(Math.max(target, start), end);
-        // Marcar interacción para que se considere "retrasado" si corresponde
-        try { this._userInteracted = true; } catch(_) {}
-      }
-      this._player.seekTo(target, true);
-      this._ensureAudioOnUserPlay();
-      try { this._player.playVideo(); } catch(_) {}
-      this._immediateUI(target);
-      blinkControls();
+			e.preventDefault();
+			this._toggleFullscreen();
+			blinkControls();
 		});
 		this.$overlay.addEventListener('touchend', (e) => {
 			const now = Date.now(); const dt = now - this._lastTap; this._lastTap = now;
@@ -555,8 +571,17 @@ class LCYouTube extends HTMLElement {
       });
     }
 		this.$fs.addEventListener('click', () => {
-			const el = this.$wrap; const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen; if (req) req.call(el);
+			this._toggleFullscreen();
 		});
+
+		if (typeof document !== 'undefined') {
+			this._handleKeydown = (e) => {
+				if (e.key === 'Escape' || e.code === 'Escape') {
+					if (this._getFullscreenElement()) this._exitFullscreen();
+				}
+			};
+			document.addEventListener('keydown', this._handleKeydown);
+		}
 
 		// Context menu
 		this.$wrap.addEventListener('contextmenu', e => e.preventDefault());
@@ -783,7 +808,14 @@ class LCYouTube extends HTMLElement {
 	}
 
 	_teardown() {
-		try { this._stopTimer(); this._player && this._player.destroy && this._player.destroy(); } catch (_) { }
+		try {
+			if (typeof document !== 'undefined' && this._handleKeydown) {
+				document.removeEventListener('keydown', this._handleKeydown);
+				this._handleKeydown = null;
+			}
+			this._stopTimer();
+			this._player && this._player.destroy && this._player.destroy();
+		} catch (_) { }
 	}
 
 	_updatePlaylistNav() {
