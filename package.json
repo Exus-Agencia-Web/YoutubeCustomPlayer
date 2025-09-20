@@ -12,7 +12,12 @@
   },
   "author": "Herduin Rivera",
   "license": "MIT",
-  "keywords": ["youtube", "webcomponent", "player", "custom"],
+  "keywords": [
+    "youtube",
+    "webcomponent",
+    "player",
+    "custom"
+  ],
   "scripts": {
     "build": "npx terser youtube-player.js -o youtube-player.min.js --compress --mangle"
   },
