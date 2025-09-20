@@ -70,11 +70,11 @@ class LCYouTube extends HTMLElement {
 	        .overlay-content{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
 	        .overlay.playing{ background: transparent; }
 	        .overlay.playing .play{ display: none; }
-	        .overlay .play{width:84px;height:84px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
-	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
+	        .overlay .play{width:84px;height:84px;border-radius:50%;background:var(--lc-accent);display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #ffffffff;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
 	        .sound-hint{position:static;background:var(--lc-hint-bg,rgba(0,0,0,.65));color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
 	        .sound-hint.hide{display:none}
-	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:var(--lc-controls-bg,linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
+	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
 	        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
 	        .btn,.time,.vol,.fs{color:var(--lc-text,#fff);font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
 	        .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:var(--lc-btn-bg,rgba(255,255,255,.12));cursor:pointer}
