@@ -74,20 +74,6 @@ class LCYouTube extends HTMLElement {
 	        .overlay .play:after{content:"";display:block;width:0;height:0;border-left:28px solid #000;border-top:18px solid transparent;border-bottom:18px solid transparent;margin-left:6px}
 	        .sound-hint{position:static;background:var(--lc-hint-bg,rgba(0,0,0,.65));color:var(--lc-text,#fff);padding:6px 12px;border-radius:8px;font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;z-index:6;user-select:none}
 	        .sound-hint.hide{display:none}
-	        :host(:fullscreen) .yt-wrap,
-	        :host(:-webkit-full-screen) .yt-wrap,
-	        :host(:fullscreen) #player,
-	        :host(:-webkit-full-screen) #player,
-	        :host(:fullscreen) iframe,
-	        :host(:-webkit-full-screen) iframe,
-	        :host(:fullscreen) .overlay,
-	        :host(:-webkit-full-screen) .overlay,
-	        :host(:fullscreen) .controls,
-	        :host(:-webkit-full-screen) .controls{max-width:none;width:100%;height:100%;border-radius:0}
-	        :host(:fullscreen) .yt-wrap,
-	        :host(:-webkit-full-screen) .yt-wrap{aspect-ratio:auto}
-	        :host(:fullscreen) .root,
-	        :host(:-webkit-full-screen) .root{width:100%;height:100%}
 	        .controls{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;gap:10px;align-items:center;background:var(--lc-controls-bg,linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)));z-index:4;user-select:none;opacity:0;pointer-events:none;transition: opacity .2s ease}
 	        .yt-wrap:hover .controls,.yt-wrap.show-controls .controls{opacity:1;pointer-events:auto}
 	        .btn,.time,.vol,.fs{color:var(--lc-text,#fff);font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
@@ -139,6 +125,7 @@ class LCYouTube extends HTMLElement {
           .vol{display:none !important;}          /* Oculta slider */
           #goLive{display:none !important;}      /* Oculta botón para liberar espacio */
           .vol-toggle{display:inline-flex;}      /* Muestra botón toggle */
+          .fs{display:none !important;}          /* Oculta fullscreen en móviles */
         }
         @media (min-width:601px){
           .vol-toggle{display:inline-flex;}             /* En desktop también mostramos el botón simple */
@@ -679,37 +666,19 @@ class LCYouTube extends HTMLElement {
 	}
 
 	_requestFullscreen(el){
-	  const tryRequest = (target) => {
-		if (!target) return false;
-		const req = target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen || target.mozRequestFullScreen;
-		if (typeof req === 'function') {
-		  try { req.call(target); return true; } catch(_) {}
+		if (!el) return;
+		const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
+		if (req) {
+			try { req.call(el); } catch(_) {}
 		}
-		return false;
-	  };
-	  const iframe = this._player?.getIframe?.();
-	  if (tryRequest(el)) return;
-	  if (tryRequest(iframe)) return;
-	  tryRequest(this);
 	}
 
 	_exitFullscreen(){
-	  const tryExit = (target) => {
-	    if (!target) return false;
-	    const exit = target.exitFullscreen || target.webkitExitFullscreen || target.msExitFullscreen || target.mozCancelFullScreen;
-	    if (typeof exit === 'function') {
-	      try { exit.call(target); return true; } catch(_) {}
-	    }
-	    const cancel = target.webkitCancelFullScreen || target.webkitExitFullscreen;
-	    if (typeof cancel === 'function') {
-	      try { cancel.call(target); return true; } catch(_) {}
-	    }
-	    return false;
-	  };
-	  if (typeof document !== 'undefined' && tryExit(document)) return;
-	  const iframe = this._player?.getIframe?.();
-	  if (tryExit(this.$wrap)) return;
-	  tryExit(iframe);
+		if (typeof document === 'undefined') return;
+		const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen || document.mozCancelFullScreen;
+		if (exit) {
+			try { exit.call(document); } catch(_) {}
+		}
 	}
 
 	_toggleFullscreen(force){
@@ -1005,17 +974,6 @@ class LCYouTube extends HTMLElement {
 		if (this._player && typeof this._player.setVolume === 'function') {
 			this._player.setVolume(parseInt(this.$vol.value, 10));
 		}
-		try {
-			const iframe = this._player?.getIframe?.();
-			if (iframe) {
-				iframe.setAttribute('allowfullscreen', '');
-				const existingAllow = iframe.getAttribute('allow') || '';
-				const allowTokens = new Set((existingAllow.split(';').map(s => s.trim()).filter(Boolean)));
-				['accelerometer','autoplay','clipboard-write','encrypted-media','gyroscope','picture-in-picture','fullscreen','web-share'].forEach(tok => allowTokens.add(tok));
-				iframe.setAttribute('allow', Array.from(allowTokens).join('; '));
-				iframe.setAttribute('playsinline', '1');
-			}
-		} catch(_) {}
 		this._userMuted = this._autoplay || (parseInt(this.$vol.value,10) === 0);
     if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
 		if (this._autoplay) {
