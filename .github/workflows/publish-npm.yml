@@ -22,7 +22,9 @@ jobs:
           npm install
       - name: Minify JS
         run: |
-          npx terser youtube-player.js -o youtube-player.min.js --compress --mangle
+          VERSION=$(node -p "require('./package.json').version")
+          BANNER="// LiveConnect Custom Video Player Version $VERSION"
+          npx terser youtube-player.js -o youtube-player.min.js --compress --mangle --preamble "$BANNER"
       - name: Publish to npm
         run: npm publish --access public
         env:
