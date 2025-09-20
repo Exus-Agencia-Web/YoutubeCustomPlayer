@@ -710,20 +710,28 @@ class LCYouTube extends HTMLElement {
 			if (this._autoplay) this.$soundHint.classList.remove('hide'); else this.$soundHint.classList.add('hide');
 		}
 
+		const activateSoundHint = () => {
+		  const hintVisible = this.$soundHint && !this.$soundHint.classList.contains('hide');
+		  let shouldForce = hintVisible;
+		  if (!shouldForce && this._autoplay) {
+		    try {
+		      const muted = this._player?.isMuted && this._player.isMuted();
+		      shouldForce = !!muted || this._userMuted;
+		    } catch(_) {}
+		  }
+		  if (!shouldForce) return false;
+		  this._ensureAudioOnUserPlay(true);
+		  if (this.$soundHint) this.$soundHint.classList.add('hide');
+		  this._userMuted = false;
+		  this._userInteracted = true;
+		  return true;
+		};
+
 		// Handler del hint
 		if (this._autoplay && this.$soundHint) {
 			this.$soundHint.addEventListener('click', (e) => {
 				e.stopPropagation();
-				this._ensureAudioOnUserPlay(true);
-				const playerReady = this._player && typeof this._player.playVideo === 'function';
-				if (playerReady) {
-					try { this._player.playVideo(); } catch(_) {}
-				} else {
-					this._pendingPlayIntent = 'play';
-				}
-				this.$soundHint.classList.add('hide');
-				this._userMuted = false;
-				this._userInteracted = true;
+				activateSoundHint();
 			});
 		}
 
@@ -733,6 +741,7 @@ class LCYouTube extends HTMLElement {
 		};
 		// Overlay: play/pause
 		this.$overlay.addEventListener('click', () => {
+		  if (activateSoundHint()) return;
 			handlePlayToggle();
 		});
 		this.$overlay.addEventListener('keydown', (e) => { if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); this.$overlay.click(); } });
