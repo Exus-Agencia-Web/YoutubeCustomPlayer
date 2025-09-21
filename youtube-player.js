@@ -1,11 +1,42 @@
 // Carga única de la IFrame API de YouTube (compartida por todas las instancias)
-window.__ytApiReadyPromise = new Promise((resolve) => {
-	if (window.YT && window.YT.Player) return resolve();
-	const tag = document.createElement('script');
-	tag.src = 'https://www.youtube.com/iframe_api';
-	document.head.appendChild(tag);
-	window.onYouTubeIframeAPIReady = () => resolve();
-});
+if (!window.__ytApiReadyPromise) {
+	window.__ytApiReadyPromise = new Promise((resolve) => {
+	  let resolved = false;
+	  let poller = null;
+	  const finish = () => {
+	    if (resolved) return;
+	    resolved = true;
+	    if (poller) clearInterval(poller);
+	    resolve();
+	  };
+
+	  if (window.YT && window.YT.Player) {
+	    finish();
+	    return;
+	  }
+
+	  const prev = window.onYouTubeIframeAPIReady;
+	  window.onYouTubeIframeAPIReady = function () {
+	    if (typeof prev === 'function') {
+	      try { prev(); } catch (_) {}
+	    }
+	    finish();
+	  };
+
+	  poller = setInterval(() => {
+	    if (window.YT && window.YT.Player) finish();
+	  }, 50);
+
+	  const scriptSrc = 'https://www.youtube.com/iframe_api';
+	  const alreadyLoaded = Array.from(document.getElementsByTagName('script'))
+	    .some(s => s.src && s.src.indexOf('youtube.com/iframe_api') !== -1);
+	  if (!alreadyLoaded) {
+	    const tag = document.createElement('script');
+	    tag.src = scriptSrc;
+	    document.head.appendChild(tag);
+	  }
+	});
+}
 
 class LCYouTube extends HTMLElement {
 	static get observedAttributes() {

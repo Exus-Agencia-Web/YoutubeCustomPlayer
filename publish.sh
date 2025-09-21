@@ -1,5 +1,7 @@
 #!/bin/bash
 
+clear 
+
 set -e
 
 VERSION_TYPE=${1:-patch}
@@ -15,6 +17,8 @@ git pull
 echo "Incrementando la versión $VERSION_TYPE..."
 NEW_VERSION=$(npm version "$VERSION_TYPE" --no-git-tag-version)
 NEW_VERSION=${NEW_VERSION#v}
+echo 
+echo
 
 if ! git diff --quiet -- package.json package-lock.json 2>/dev/null; then
     echo "Creando commit Update $NEW_VERSION..."
@@ -28,4 +32,6 @@ fi
 echo "Publicando los cambios en el repositorio..."
 git push
 
-echo "¡Publicación completada!"
+echo
+echo "¡Publicación de v$NEW_VERSION completada!"
+echo
