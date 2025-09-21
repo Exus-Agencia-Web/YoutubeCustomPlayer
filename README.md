@@ -67,6 +67,42 @@ Una vez cargado el script puedes usar `<lc-youtube>` en tu HTML sin inicializaci
 
 Todos los atributos de color son opcionales; si no se especifican se usan los valores predeterminados del componente.
 
+> Nota: además de los atributos, las mismas propiedades (`video`, `playlist`, `index`, `autoplay`, `dvrWindow`) pueden asignarse directamente desde JavaScript (`player.video = 'C4O7djfJZ9Q'`), lo que facilita la integración con frameworks como Angular.
+
+## Eventos personalizados
+
+`<lc-youtube>` emite eventos `CustomEvent` que burbujean y son `composed`, de modo que pueden escucharse desde el documento que contiene al componente (ideal para Angular, React, Vue, etc.).
+
+| Evento | Cuándo se dispara | `detail` |
+|--------|-------------------|----------|
+| `lc-ready` | El player quedó inicializado. | `{ videoId, playlist }` |
+| `lc-play`, `lc-pause`, `lc-ended`, `lc-buffering`, `lc-cued` | Cambios de estado reportados por la IFrame API. | `{ state, currentTime? }` |
+| `lc-state-change` | Cualquier cambio de estado de YouTube. | `{ state }` |
+| `lc-playback-request` (`lc-play-request` / `lc-pause-request`) | El usuario pidió reproducir/pausar antes de que YouTube confirme el cambio. | `{ action }` |
+| `lc-volume-change` | Cambios de volumen (slider, toggle, hint). | `{ volume, muted, source }` |
+| `lc-mute`, `lc-unmute` | Transiciones de mute/unmute. | `{ volume, muted, source }` |
+| `lc-seek` | Se realizó un seek manual (barra, doble tap, ir al vivo). | `{ position, live, autoPlay }` |
+| `lc-skip` | Doble tap hacia adelante/atrás. | `{ delta, target }` |
+| `lc-go-live` | El usuario pulsó «Ir al vivo». | `{ success }` |
+| `lc-live-edge` | El player saltó al borde en vivo (con o sin DVR). | `{ target, dvr, autoPlay, forced }` |
+| `lc-live-change` | Entró/salió del modo live. | `{ live }` |
+| `lc-fullscreen-change` | Pantalla completa activada/desactivada. | `{ fullscreen }` |
+| `lc-error` | YouTube devolvió un error. | `{ code }` |
+
+Ejemplo de integración:
+
+```js
+const player = document.querySelector('lc-youtube');
+
+player.addEventListener('lc-play', (event) => {
+  console.log('Reproduciendo', event.detail);
+});
+
+player.addEventListener('lc-volume-change', (event) => {
+  console.log(`Volumen: ${event.detail.volume}, muted: ${event.detail.muted}`);
+});
+```
+
 ## Comportamiento de la UI
 - **Pantalla completa:** doble clic sobre el overlay alterna fullscreen. `Escape` fuerza la salida. En móvil se mantiene soporte para doble tap ±10 s.
 - **Overlay:** al pausar/finalizar el video se muestra la miniatura oficial de YouTube con el color `color-overlay` superpuesto al 35 %. Mientras reproduce, el overlay es transparente.
@@ -89,4 +125,3 @@ Incluye el fichero minificado en tu build:
 El repositorio incluye un workflow de GitHub Actions que minifica `youtube-player.js` y publica automáticamente en npm. Para activarlo:
 1. Configura el secreto `NPM_TOKEN` en GitHub.
 2. Haz push a la rama `main`.
-

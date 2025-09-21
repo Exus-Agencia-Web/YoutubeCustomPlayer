@@ -390,7 +390,13 @@ class LCYouTube extends HTMLElement {
 	  if (this.$controls) this.$controls.style.display = 'none';
 	  if (this.$error) this.$error.classList.add('show');
 	}
-	
+
+	_emit(type, detail = {}){
+	  try {
+	    this.dispatchEvent(new CustomEvent(type, { detail: detail || {}, bubbles: true, composed: true }));
+	  } catch(_) {}
+	}
+
 	_detectLive() {
 	  try {
 	    // No aplica para playlists
@@ -464,14 +470,16 @@ class LCYouTube extends HTMLElement {
       const shouldDisable = this._isLive && !this._hasLiveDVR();
       if (shouldDisable) this.$progress.classList.add('disabled'); else this.$progress.classList.remove('disabled');
     }
+    if (prevLive !== nextLive) this._emit('lc-live-change', { live: nextLive });
   }
 
-	_ensureAudioOnUserPlay(forceUnmute = false){
+	_ensureAudioOnUserPlay(forceUnmute = false, meta = {}){
 	  try{
 	    if (!this._player){
 	      if (forceUnmute) this._pendingForceUnmute = true;
 	      return;
 	    }
+	    const detailBase = { source: meta.source || 'auto' };
 	    if (forceUnmute){
 	      let v = this.$vol ? parseInt(this.$vol.value,10) : 100;
 	      if (!Number.isFinite(v) || v <= 0){
@@ -483,6 +491,7 @@ class LCYouTube extends HTMLElement {
 	      this._userMuted = false;
 	      this._pendingForceUnmute = false;
 	      if (this.$volToggle) this.$volToggle.classList.remove('muted');
+	      this._emit('lc-unmute', { ...detailBase, volume: v });
 	      return;
 	    }
 	    const muted = this._player?.isMuted && this._player.isMuted();
@@ -491,6 +500,7 @@ class LCYouTube extends HTMLElement {
 	      const v = this.$vol ? parseInt(this.$vol.value,10) || 100 : 100;
 	      this._player?.setVolume?.(v);
 	      if (this.$volToggle) this.$volToggle.classList.remove('muted');
+	      this._emit('lc-unmute', { ...detailBase, volume: v });
 	    }
 	  }catch(_){}
 	}
@@ -502,7 +512,10 @@ class LCYouTube extends HTMLElement {
 	  const playingStates = [PS.PLAYING, PS.BUFFERING].filter(val => typeof val === 'number');
 	  const shouldPlay = !playingStates.includes(st);
 	  const playerReady = this._player && typeof this._player.playVideo === 'function' && typeof this._player.pauseVideo === 'function';
-	  this._ensureAudioOnUserPlay(shouldPlay);
+	  const action = shouldPlay ? 'play' : 'pause';
+	  this._emit('lc-playback-request', { action });
+	  if (action === 'play') this._emit('lc-play-request', {}); else this._emit('lc-pause-request', {});
+	  this._ensureAudioOnUserPlay(shouldPlay, { source: 'toggle' });
 	  if (!playerReady){
 	    this._pendingPlayIntent = shouldPlay ? 'play' : 'pause';
 	    return;
@@ -515,7 +528,7 @@ class LCYouTube extends HTMLElement {
 	_flushPendingPlayback(){
 	  if (!this._player) return;
 	  if (this._pendingForceUnmute){
-	    this._ensureAudioOnUserPlay(true);
+	    this._ensureAudioOnUserPlay(true, { source: 'pending-playback' });
 	    this._pendingForceUnmute = false;
 	  }
 	  if (this._pendingPlayIntent === 'play') {
@@ -566,26 +579,28 @@ class LCYouTube extends HTMLElement {
 	  if (!data || !this._player) return;
 	  this._seekPreview = null;
 	  try { this._player.seekTo(data.target, true); } catch(_) {}
-	  this._userInteracted = true;
-	  if (autoPlay) this._ensureAudioOnUserPlay();
-	  if (autoPlay) {
-	    try { this._player.playVideo(); } catch(_) {}
-	  }
-	  this._immediateUI(data.target);
-	}
+		  this._userInteracted = true;
+		  if (autoPlay) this._ensureAudioOnUserPlay(false, { source: 'seek' });
+		  if (autoPlay) {
+		    try { this._player.playVideo(); } catch(_) {}
+		  }
+		  this._immediateUI(data.target);
+		  this._emit('lc-seek', { position: data.target, live: data.live, autoPlay });
+		}
 
 	_seekToLiveEdge(forceUnmute = false, { autoPlay = true } = {}){
 	  if (!this._player || !this._isLive) return false;
 	  const effectiveForce = forceUnmute || this._pendingForceUnmute;
 	  const hasDVR = this._hasLiveDVR();
 	  if (!hasDVR) {
-	    if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true);
-	    else if (autoPlay) this._ensureAudioOnUserPlay();
+	    if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true, { source: 'live-edge' });
+	    else if (autoPlay) this._ensureAudioOnUserPlay(false, { source: 'live-edge' });
 	    if (autoPlay) {
 	      try { this._player.playVideo(); } catch(_) {}
 	    }
 	    this._awaitingLiveEdge = false;
 	    if (effectiveForce) this._pendingForceUnmute = false;
+	    this._emit('lc-live-edge', { target: null, dvr: false, autoPlay, forced: !!forceUnmute });
 	    return true;
 	  }
 	  const { start, end } = this._getDvrRange();
@@ -598,14 +613,15 @@ class LCYouTube extends HTMLElement {
 	  const offset = Math.max(0.5, Math.min(2, span * 0.01 || 0.75));
 	  const target = Math.max(start, end - offset);
 	  try { this._player.seekTo(target, true); } catch(_) {}
-	  if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true);
-	  else if (autoPlay) this._ensureAudioOnUserPlay();
+	  if (effectiveForce && autoPlay) this._ensureAudioOnUserPlay(true, { source: 'live-edge' });
+	  else if (autoPlay) this._ensureAudioOnUserPlay(false, { source: 'live-edge' });
 	  if (autoPlay) {
 	    try { this._player.playVideo(); } catch(_) {}
 	  }
 	  this._immediateUI(target);
 	  this._awaitingLiveEdge = false;
 	  if (effectiveForce) this._pendingForceUnmute = false;
+	  this._emit('lc-live-edge', { target, dvr: true, autoPlay, forced: !!forceUnmute });
 	  return true;
 	}
 
@@ -736,16 +752,22 @@ class LCYouTube extends HTMLElement {
 	}
 
 	_toggleFullscreen(force){
-		const isFs = !!this._getFullscreenElement();
+		const wasFs = !!this._getFullscreenElement();
 		if (force === true) {
-			if (!isFs) this._requestFullscreen(this.$wrap);
+			if (!wasFs) this._requestFullscreen(this.$wrap);
+			const nowFs = !!this._getFullscreenElement();
+			if (nowFs !== wasFs) this._emit('lc-fullscreen-change', { fullscreen: nowFs });
 			return;
 		}
 		if (force === false) {
-			if (isFs) this._exitFullscreen();
+			if (wasFs) this._exitFullscreen();
+			const nowFs = !!this._getFullscreenElement();
+			if (nowFs !== wasFs) this._emit('lc-fullscreen-change', { fullscreen: nowFs });
 			return;
 		}
-		if (isFs) this._exitFullscreen(); else this._requestFullscreen(this.$wrap);
+		if (wasFs) this._exitFullscreen(); else this._requestFullscreen(this.$wrap);
+		const nowFs = !!this._getFullscreenElement();
+		if (nowFs !== wasFs) this._emit('lc-fullscreen-change', { fullscreen: nowFs });
 	}
 
 	_bindUI() {
@@ -774,10 +796,12 @@ class LCYouTube extends HTMLElement {
 		    } catch(_) {}
 		  }
 		  if (!shouldForce) return false;
-		  this._ensureAudioOnUserPlay(true);
+		  this._ensureAudioOnUserPlay(true, { source: 'hint' });
 		  if (this.$soundHint) this.$soundHint.classList.add('hide');
 		  this._userMuted = false;
 		  this._userInteracted = true;
+		  const vol = this.$vol ? parseInt(this.$vol.value,10) || 0 : (typeof this._player?.getVolume === 'function' ? this._player.getVolume() || 0 : 0);
+		  this._emit('lc-volume-change', { volume: vol, muted: false, source: 'hint' });
 		  return true;
 		};
 
@@ -810,8 +834,9 @@ class LCYouTube extends HTMLElement {
 		  this.$goLive.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this._userInteracted = true;
-			const success = this._seekToLiveEdge(true);
+			const success = this._seekToLiveEdge(true, { autoPlay: true });
 			if (!success) this._awaitingLiveEdge = true;
+			this._emit('lc-go-live', { success });
 		  });
 		}
 
@@ -932,10 +957,11 @@ class LCYouTube extends HTMLElement {
 				  target = Math.min(Math.max(target, start), end);
 				  try { this._userInteracted = true; } catch(_) {}
 				}
-				try { this._player?.seekTo?.(target, true); } catch(_) {}
-				this._ensureAudioOnUserPlay();
-				try { this._player?.playVideo?.(); } catch(_) {}
-				this._immediateUI(target);
+					try { this._player?.seekTo?.(target, true); } catch(_) {}
+					this._ensureAudioOnUserPlay(false, { source: 'double-tap' });
+					try { this._player?.playVideo?.(); } catch(_) {}
+					this._immediateUI(target);
+					this._emit('lc-skip', { delta, target });
 				blinkControls();
 				e.preventDefault();
 				return;
@@ -957,6 +983,9 @@ class LCYouTube extends HTMLElement {
 		  this._userMuted = (v === 0);
       if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
 		  if (v === 0) { try{ this._player.mute && this._player.mute(); }catch(_){} } else { try{ this._player.unMute && this._player.unMute(); }catch(_){} }
+		  const detail = { volume: v, muted: this._userMuted, source: 'slider' };
+		  this._emit('lc-volume-change', detail);
+		  if (this._userMuted) this._emit('lc-mute', detail); else this._emit('lc-unmute', detail);
 		});
     if (this.$volToggle) {
       this.$volToggle.addEventListener('click', () => {
@@ -976,6 +1005,9 @@ class LCYouTube extends HTMLElement {
           }
           if (this.$volToggle) this.$volToggle.classList.toggle('muted', this._userMuted);
           this._userInteracted = true;
+          const volDetail = { volume: this.$vol ? parseInt(this.$vol.value,10) : (this._userMuted ? 0 : 100), muted: this._userMuted, source: 'toggle' };
+          this._emit('lc-volume-change', volDetail);
+          if (this._userMuted) this._emit('lc-mute', volDetail); else this._emit('lc-unmute', volDetail);
         } catch(_) {}
       });
     }
@@ -1080,35 +1112,51 @@ class LCYouTube extends HTMLElement {
 					tryJumpToLast();
 				}
 			this._updatePlaylistNav();
+		this._emit('lc-ready', { videoId: this._getCurrentVideoId(), playlist: this._playlist || null });
 	}
 
 	_onStateChange(e) {
+		const state = e?.data;
 		// Actualiza modo live por si cambia al cargar
 		this._setLiveUI(this._detectLive());
 		this._updateUI();
-		if (e.data === YT.PlayerState.CUED && this._autoplay) {
+		if (state === YT.PlayerState.CUED && this._autoplay) {
 			try { if (this._player && typeof this._player.playVideo === 'function') this._player.playVideo(); } catch(_) {}
 		}
-		if (e.data === YT.PlayerState.PLAYING) {
+		if (state === YT.PlayerState.PLAYING) {
 			this.$overlay.classList.add('playing');
 			this._setOverlayThumbnail(false);
 			this._startTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '❚❚';
-		} else if (e.data === YT.PlayerState.PAUSED) {
+			this._emit('lc-play', { state, currentTime: this._player?.getCurrentTime?.() || 0 });
+		} else if (state === YT.PlayerState.PAUSED) {
 			this.$overlay.classList.remove('playing');
 			this._setOverlayThumbnail(true);
 			this._stopTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '▶︎';
-		} else if (e.data === YT.PlayerState.ENDED) {
+			this._emit('lc-pause', { state, currentTime: this._player?.getCurrentTime?.() || 0 });
+		} else if (state === YT.PlayerState.ENDED) {
 			this.$overlay.classList.remove('playing');
 			this._setOverlayThumbnail(true);
 			this._stopTimer();
 			this._blinkControls();
 			this.$playBtn.textContent = '▶︎';
+			this._emit('lc-ended', { state, currentTime: this._player?.getCurrentTime?.() || 0 });
+		} else if (state === YT.PlayerState.BUFFERING) {
+			this._emit('lc-buffering', { state });
+		} else if (state === YT.PlayerState.CUED) {
+			this._emit('lc-cued', { state });
 		}
+		this._emit('lc-state-change', { state });
 		this._updatePlaylistNav();
+	}
+
+	_onError(e) {
+		this._showError();
+		const code = e?.data;
+		this._emit('lc-error', { code });
 	}
 
 	_updateUI() {

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Youtube Custom Player lc-youtube (Web Component)</title>
+</head>
+<body>
+  <h3 style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; text-align:center; margin:16px 0;">Demo: &lt;lc-youtube video="..."&gt;</h3>
+  <div style="max-width: 960px; margin: 0 auto;">
+    
+    <div align="center"><h3>Playlist de Youtube</h3></div>
+    <lc-youtube playlist="PLFJNeAS7_Yz2bbd_HIx7WjAhErEzBc7q4" index="-1" autoplay="0"></lc-youtube>
+
+    <div align="center"><h3>Video Estandar / Live</h3></div>
+    <lc-youtube id="live-player" video="yLPZjdPetpg" autoplay="1"></lc-youtube>
+
+    <div align="center" style="margin-top:32px;"><h3>Escuchando eventos</h3></div>
+    <pre id="event-log" style="background:#0b0b0b;color:#f5f5f5;padding:16px;border-radius:8px;min-height:140px;font:13px/1.4 Consolas,Menlo,monospace;overflow:auto;">(Los eventos aparecerán aquí)</pre>
+
+  </div>
+  <script src="youtube-player.js"></script>
+  <script>
+    const log = document.getElementById('event-log');
+    const players = document.querySelectorAll('lc-youtube');
+    const events = [
+      'lc-ready','lc-play','lc-pause','lc-ended','lc-volume-change','lc-mute','lc-unmute','lc-seek','lc-go-live','lc-fullscreen-change','lc-error'
+    ];
+
+    const appendLog = (name, detail) => {
+      if (!log) return;
+      const timestamp = new Date().toLocaleTimeString();
+      const line = `[${timestamp}] ${name} ${JSON.stringify(detail)}\n`;
+      log.textContent = line + log.textContent;
+    };
+
+    players.forEach(player => {
+      events.forEach(evt => {
+        player.addEventListener(evt, (event) => {
+          console.log(`[${evt}]`, event.detail);
+          appendLog(evt, event.detail);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
