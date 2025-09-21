@@ -93,7 +93,7 @@ class LCYouTube extends HTMLElement {
 	      <style>
 	        .vol-toggle{display:inline-flex}
 	        :host{display:block}
-	        .yt-wrap{position:relative;max-width:1920px;margin:auto;background:var(--lc-bg,#000);aspect-ratio:16/9;border-radius:5px}
+	        .yt-wrap{position:relative;width:var(--lc-width,100%);max-width:var(--lc-max-width,100%);margin:var(--lc-margin,0 auto);background:var(--lc-bg,#000);aspect-ratio:16/9;border-radius:5px}
 	        .overlay,.controls,#player,.live-badge{border-radius:inherit}
 	        iframe{border-radius:inherit}
 	        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
