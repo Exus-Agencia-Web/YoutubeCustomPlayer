@@ -9,11 +9,6 @@ if [ "$VERSION_TYPE" != "patch" ] && [ "$VERSION_TYPE" != "minor" ] && [ "$VERSI
     exit 1
 fi
 
-if ! git diff-index --quiet HEAD --; then
-    echo "Error: Tienes cambios sin confirmar. Por favor, haz commit o stash antes de continuar."
-    exit 1
-fi
-
 echo "Actualizando desde el repositorio remoto..."
 git pull
 

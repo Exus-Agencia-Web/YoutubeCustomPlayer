@@ -170,6 +170,60 @@ class LCYouTube extends HTMLElement {
     `;
 	}
 
+	// === Propiedades compatibles con frameworks (Angular, React, etc.) ===
+	get video(){ return this._video; }
+	set video(val){
+	  if (val == null) { this.removeAttribute('video'); return; }
+	  const str = String(val);
+	  if (this.getAttribute('video') === str) return;
+	  this.setAttribute('video', str);
+	}
+
+	get playlist(){ return this._playlist; }
+	set playlist(val){
+	  if (val == null || val === '') { this.removeAttribute('playlist'); return; }
+	  const str = String(val);
+	  if (this.getAttribute('playlist') === str) return;
+	  this.setAttribute('playlist', str);
+	}
+
+	get index(){
+	  const attr = this.getAttribute('index');
+	  if (attr == null) return null;
+	  const num = parseInt(attr, 10);
+	  return Number.isNaN(num) ? null : num;
+	}
+	set index(val){
+	  if (val == null || val === '') { this.removeAttribute('index'); return; }
+	  const num = Number(val);
+	  if (Number.isNaN(num)) return;
+	  const attrVal = String(num);
+	  if (this.getAttribute('index') === attrVal) return;
+	  this.setAttribute('index', attrVal);
+	}
+
+	get autoplay(){ return this._autoplay; }
+	set autoplay(val){
+	  const boolVal = this._parseBool(val);
+	  if (boolVal) {
+	    if (!this.hasAttribute('autoplay')) this.setAttribute('autoplay', '');
+	  } else if (this.hasAttribute('autoplay')) {
+	    this.removeAttribute('autoplay');
+	  }
+	}
+
+	get dvrWindow(){ return this._dvrWindow; }
+	set dvrWindow(val){
+	  const num = Number(val);
+	  if (Number.isNaN(num) || num <= 0) {
+	    this.removeAttribute('dvr-window');
+	    return;
+	  }
+	  const attrVal = String(num);
+	  if (this.getAttribute('dvr-window') === attrVal) return;
+	  this.setAttribute('dvr-window', attrVal);
+	}
+
 	_parseBool(val){ if (val == null) return false; const s = String(val).toLowerCase().trim(); return s === '1' || s === 'true' || s === 'yes' || s === ''; }
 
 	_parseListId(val){
