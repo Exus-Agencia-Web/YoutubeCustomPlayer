@@ -809,7 +809,12 @@ class LCYouTube extends HTMLElement {
 		if (this._autoplay && this.$soundHint) {
 			this.$soundHint.addEventListener('click', (e) => {
 				e.stopPropagation();
-				activateSoundHint();
+				const unlocked = activateSoundHint();
+				if (unlocked) {
+				  const PS = (typeof YT !== 'undefined' && YT.PlayerState) || {};
+				  const st = this._player?.getPlayerState?.();
+				  if (st !== PS.PLAYING) this._handleUserPlayToggle();
+				}
 			});
 		}
 
@@ -819,7 +824,14 @@ class LCYouTube extends HTMLElement {
 		};
 		// Overlay: play/pause
 		this.$overlay.addEventListener('click', () => {
-		  if (activateSoundHint()) return;
+		  const unlocked = activateSoundHint();
+		  if (unlocked) {
+		    try {
+		      const PS = (typeof YT !== 'undefined' && YT.PlayerState) || {};
+		      const st = this._player?.getPlayerState?.();
+		      if (st === PS.PLAYING || st === PS.BUFFERING) return;
+		    } catch(_) {}
+		  }
 			handlePlayToggle();
 		});
 		this.$overlay.addEventListener('keydown', (e) => { if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); this.$overlay.click(); } });
