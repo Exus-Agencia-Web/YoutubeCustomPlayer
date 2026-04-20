@@ -2,6 +2,13 @@
 
 Componente Web `<lc-youtube>` para incrustar videos o playlists de YouTube con una capa de controles moderna, accesible y totalmente personalizable.
 
+## Demo y captura
+
+- Demo local rápida: abre `examples.html` en un servidor estático para ver el componente funcionando.
+- Captura de pantalla:
+
+![Captura de lc-youtube player](https://github.com/user-attachments/assets/d9806c81-08f5-4d01-bc96-a7ffd18838c1)
+
 ## Características
 - Reproductor personalizado para videos y playlists (incluye navegación Anterior/Siguiente).
 - Detección de transmisiones en vivo con indicador y botón «Ir al vivo».
