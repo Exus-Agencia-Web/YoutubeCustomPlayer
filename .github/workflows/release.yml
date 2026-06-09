@@ -22,11 +22,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # fetch-depth: 0 = historial completo. Necesario porque DEPTH lo
-          # determina el secret COMMITSDEPTH en runtime y no podemos calcular
-          # DEPTH+1 en YAML de Actions (no hay aritmética en expresiones).
-          # Trade-off aceptado: checkout más pesado, pero siempre funciona
-          # sin importar el valor de COMMITSDEPTH.
           fetch-depth: 0
 
       - name: Install rsync
@@ -36,17 +31,11 @@ jobs:
 
       - name: Run release
         env:
-          # Cantidad de commits hacia atrás que entran al rango del deploy.
-          # El script lee COMMITSDEPTH; si no está definido, usa 1.
-          COMMITSDEPTH: ${{ secrets.COMMITSDEPTH }}
-          # Llave por servidor dev — el nombre debe coincidir con el 5º campo
-          # de cada entrada en DEVELOP_SERVERS del script.
           AWS1_SSH_KEY: ${{ secrets.AWS1_SSH_KEY }}
-          # Fallback opcional si alguna entrada omite el 5º campo:
-          # SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          GH_BEFORE: ${{ github.event.before }}
+          USE_GH_BEFORE: ${{ secrets.USE_GH_BEFORE }}
+          COMMITSDEPTH: ${{ secrets.COMMITSDEPTH }}
         run: |
-          # Mapea la rama disparadora al argumento de ambiente que espera
-          # release.sh. El script ya no deduce el ambiente por la rama.
           case "${GITHUB_REF_NAME}" in
             develop)    TARGET=develop ;;
             master)     TARGET=production ;;
